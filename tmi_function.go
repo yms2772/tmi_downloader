@@ -26,8 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ricochet2200/go-disk-usage/du"
-
 	"fyne.io/fyne"
 	"fyne.io/fyne/canvas"
 	"fyne.io/fyne/dialog"
@@ -39,6 +37,7 @@ import (
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/martinlindhe/notify"
 	"github.com/nicklaw5/helix"
+	"github.com/ricochet2200/go-disk-usage/du"
 	dlog "github.com/sqweek/dialog"
 	"github.com/tidwall/gjson"
 	"github.com/zserge/lorca"
