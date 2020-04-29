@@ -93,7 +93,8 @@ var ( // 언어 변수
 		"alreadyAdded": "Already added video.",
 		"stoppedDownload": "Progress has been canceled.",
 		"stoppedNoStatus": "Can't' check the progress.",
-		"canceled": "Canceled"
+		"canceled": "Canceled",
+		"noFreeSpace": "Less than 10% of space left."
 	}`
 
 	// 한국어
