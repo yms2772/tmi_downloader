@@ -44,6 +44,7 @@ import (
 	"gopkg.in/ini.v1"
 )
 
+//CheckChrome Chrome 체크
 func CheckChrome() bool {
 	if len(lorca.LocateChrome()) == 0 {
 		return false // Chrome이 없으면
@@ -52,6 +53,7 @@ func CheckChrome() bool {
 	return true // Chrome이 있으면
 }
 
+//FindElem 슬라이스 쿼리
 func FindElem(a []string, x string) int {
 	for i, n := range a {
 		if x == n {
@@ -61,6 +63,7 @@ func FindElem(a []string, x string) int {
 	return len(a)
 }
 
+//ContainsElem 슬라이스 확인
 func ContainsElem(a []string, x string) bool {
 	for _, n := range a {
 		if x == n {
@@ -70,6 +73,7 @@ func ContainsElem(a []string, x string) bool {
 	return false
 }
 
+//OpenURL URL 열기
 func OpenURL(url string) *exec.Cmd {
 	var cmdOpenURL *exec.Cmd
 
@@ -88,6 +92,7 @@ func OpenURL(url string) *exec.Cmd {
 	return cmdOpenURL
 }
 
+//SplBox 스플릿 창 텍스트
 func SplBox(s string, l fyne.CanvasObject) fyne.CanvasObject {
 	sqlBox := fyne.NewContainerWithLayout(
 		layout.NewBorderLayout(l, nil, nil, widget.NewLabel(s)),
@@ -97,6 +102,7 @@ func SplBox(s string, l fyne.CanvasObject) fyne.CanvasObject {
 	return sqlBox
 }
 
+//ErrHandle 에러 핸들링
 func ErrHandle(e error) {
 	if e != nil {
 		_, file, line, _ := runtime.Caller(1)
@@ -165,6 +171,7 @@ func ErrHandle(e error) {
 	}
 }
 
+//VarOS OS별 변수
 func VarOS(s string) string {
 	switch s {
 	case "dirTemp":
@@ -207,6 +214,7 @@ func VarOS(s string) string {
 	return ""
 }
 
+//CheckUpdate 업데이트 체크
 func CheckUpdate() (bool, string) {
 	body, err := jsonParse("https://dl.tmi.tips/bin/tmi_downloader.json")
 	ErrHandle(err)
@@ -233,6 +241,7 @@ func CheckUpdate() (bool, string) {
 	return false, updateNote
 }
 
+//HandleRoot Twitch OAuth2
 func HandleRoot(w http.ResponseWriter, _ *http.Request) (err error) { // Twitch OAuth2 Function
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -241,6 +250,7 @@ func HandleRoot(w http.ResponseWriter, _ *http.Request) (err error) { // Twitch 
 	return
 }
 
+//HandleLogin Twitch OAuth2
 func HandleLogin(w http.ResponseWriter, r *http.Request) (err error) {
 	session, err := cookieStore.Get(r, oauthSessionName)
 	if err != nil {
@@ -266,6 +276,7 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) (err error) {
 	return
 }
 
+//HandleOAuth2Callback Twitch OAuth2
 func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) (err error) {
 	session, err := cookieStore.Get(r, oauthSessionName)
 	if err != nil {
@@ -311,13 +322,17 @@ func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) (err error) {
 	return
 }
 
+//HumanError Twitch OAuth2
 func (h HumanReadableWrapper) HumanError() string {
 	return h.ToHuman
 }
+
+//HTTPCode Twitch OAuth2
 func (h HumanReadableWrapper) HTTPCode() int {
 	return h.Code
 }
 
+//AnnotateError Twitch OAuth2
 func AnnotateError(err error, annotation string) error {
 	if err == nil {
 		return nil
@@ -325,6 +340,7 @@ func AnnotateError(err error, annotation string) error {
 	return HumanReadableWrapper{ToHuman: annotation, error: err}
 }
 
+//CryptoSHA256 SHA-256 암호화
 func CryptoSHA256(file string) string {
 	f, err := os.Open(file)
 	if err != nil {
@@ -340,12 +356,14 @@ func CryptoSHA256(file string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
+//GetDiskUsage 디스크 사용량
 func GetDiskUsage(dst string) float32 {
 	usage := du.NewDiskUsage(dst)
 
 	return usage.Usage() * 100
 }
 
+//Untar tar 압축 해제
 func Untar(dst string, r io.Reader) error { // tar.gz 압축해제
 	gzr, err := gzip.NewReader(r)
 	if err != nil {
@@ -392,6 +410,7 @@ func Untar(dst string, r io.Reader) error { // tar.gz 압축해제
 	}
 }
 
+//DownloadFile Twitch ts파일 다운로드
 func DownloadFile(filepath string, url string, tsN string) error { // ts 파일 다운로드
 	tsURL := url + "chunked" + "/" + tsN + ".ts"
 
@@ -415,6 +434,7 @@ func DownloadFile(filepath string, url string, tsN string) error { // ts 파일 
 	return nil
 }
 
+//RecordFile Twitch ts 파일 녹화
 func RecordFile(filepath string, url string, tsN string) (string, error) { // ts 파일 다운로드 (녹화)
 	tsURL := url + "chunked" + "/" + tsN + ".ts"
 
@@ -435,6 +455,7 @@ func RecordFile(filepath string, url string, tsN string) (string, error) { // ts
 	return "pass", nil
 }
 
+//ClearDir 폴더 정리
 func ClearDir(dir string) { // 폴더 내 모든 파일 삭제
 	files, _ := filepath.Glob(filepath.Join(dir, "*"))
 
@@ -443,7 +464,8 @@ func ClearDir(dir string) { // 폴더 내 모든 파일 삭제
 	}
 }
 
-func tsFinder(token string) (int, error) { // ts 개수 로드
+//tsFinder ts 개수 로드
+func tsFinder(token string) (int, error) {
 	resp, err := http.Get("http://vod-secure.twitch.tv/" + token + "/chunked/index-dvr.m3u8")
 	if err != nil {
 		return 0, err
@@ -461,7 +483,8 @@ func tsFinder(token string) (int, error) { // ts 개수 로드
 	return ts, nil
 }
 
-func makeINI() { // setting.ini 생성
+//makeINI setting.ini 생성
+func makeINI() {
 	iniFile, err := os.OpenFile(dirBin+`/setting.ini`, os.O_CREATE|os.O_RDWR, os.FileMode(0644))
 	ErrHandle(err)
 
@@ -471,7 +494,8 @@ func makeINI() { // setting.ini 생성
 	iniFile.Close()
 }
 
-func jsonParse(url string) ([]byte, error) { // json 파싱
+//jsonParse json 파싱
+func jsonParse(url string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte("error"), err
@@ -493,7 +517,8 @@ func jsonParse(url string) ([]byte, error) { // json 파싱
 	return body, nil
 }
 
-func jsonParseTwitch(url string) ([]byte, error) { // json 파싱 (Twitch API 헤더 추가)
+//jsonParseTwitch json 파싱 (Twitch API 헤더 추가)
+func jsonParseTwitch(url string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte("error"), err
@@ -518,7 +543,8 @@ func jsonParseTwitch(url string) ([]byte, error) { // json 파싱 (Twitch API �
 	return body, nil
 }
 
-func jsonParseTwitchWithToken(url, token string) ([]byte, error) { // json 파싱 (Twitch API 헤더 추가)
+//jsonParseTwitchWithToken json 파싱 (Twitch API 헤더 추가)
+func jsonParseTwitchWithToken(url, token string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte("error"), err
@@ -544,7 +570,8 @@ func jsonParseTwitchWithToken(url, token string) ([]byte, error) { // json 파�
 	return body, nil
 }
 
-func keyCheck(cb string) (string, string, int, string, string, string) { // 코드 정규식 및 유효성 체크
+//keyCheck 코드 정규식 및 유효성 체크
+func keyCheck(cb string) (string, string, int, string, string, string) {
 	urlStr := strings.ReplaceAll(cb, " ", "")
 
 	isMatched, err := regexp.MatchString(`^(((http(s?))://)?)((www.)?)twitch.tv/videos/+\d{9}?$`, urlStr)
@@ -639,6 +666,7 @@ func keyCheck(cb string) (string, string, int, string, string, string) { // 코�
 	return "error", "nil", 500, "nil", "nil", "nil"
 }
 
+//RunAgain 프로그램 재실행
 func RunAgain() {
 	path, err := os.Executable()
 	ErrHandle(err)
@@ -649,7 +677,8 @@ func RunAgain() {
 	os.Exit(1)
 }
 
-func errINI(e error) { // setting.ini 에러 확인
+//errINI setting.ini 에러 확인
+func errINI(e error) {
 	if e != nil {
 		err = os.MkdirAll(dirBin, 0777)
 		ErrHandle(err)
@@ -661,7 +690,8 @@ func errINI(e error) { // setting.ini 에러 확인
 	}
 }
 
-func keyCheckRealTime(clp string) (bool, string) { // 실시간 코드 정규식 확인
+//keyCheckRealTime 실시간 코드 정규식 확인
+func keyCheckRealTime(clp string) (bool, string) {
 	isMatched, err := regexp.MatchString(`(http|https)://.*twitch.tv/videos/\d+`, clp)
 	ErrHandle(err)
 
@@ -672,14 +702,16 @@ func keyCheckRealTime(clp string) (bool, string) { // 실시간 코드 정규식
 	return false, clp
 }
 
-func setLang() string { // setting.ini system - DEFAULT_LANG 확인
+//setLang setting.ini system - DEFAULT_LANG 확인
+func setLang() string {
 	cfg, err := ini.Load(dirBin + `/setting.ini`)
 	errINI(err)
 
 	return cfg.Section("system").Key("DEFAULT_LANG").String()
 }
 
-func loadLang(data string) string { // 언어 json 로드
+//loadLang 언어 json 로드
+func loadLang(data string) string {
 	switch lang {
 	case "English":
 		v := gjson.Get(langEN, data)
@@ -696,6 +728,7 @@ func loadLang(data string) string { // 언어 json 로드
 	}
 }
 
+//errHTTP HTTP 에러
 func errHTTP(e error) int {
 	if e != nil {
 		return 1
@@ -704,16 +737,19 @@ func errHTTP(e error) int {
 	return 0
 }
 
-func (c *counter) increment() { // goroutine 카운터 증가
+//increment goroutine 카운터 증가
+func (c *counter) increment() {
 	c.mu.Lock()
 	c.i++
 	c.mu.Unlock()
 }
 
+//GetFirstQueue 대기열 첫번째 가져오기
 func GetFirstQueue() string {
 	return queueID[0]
 }
 
+//DownloadHome 다운로드 홈
 func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 	keyEntry := widget.NewEntry()
 	keyEntry.SetPlaceHolder(loadLang("keyEntryHolder"))
@@ -1529,6 +1565,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 	return homeLayoutBox
 }
 
+//Advanced 설정
 func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 	cfg, err := ini.Load(dirBin + `/setting.ini`)
 	errINI(err)
@@ -1640,6 +1677,7 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 	return settingMenu, cfg
 }
 
+//AddQueue 대기열 추가
 func AddQueue(title, vodid, time, thumb string, prog *widget.ProgressBar, status *widget.Label, progStatus *widget.Entry, cmd *exec.Cmd) {
 	fmt.Println("--- 대기열 추가")
 	fmt.Println("ID: " + vodid)
@@ -1669,6 +1707,7 @@ func AddQueue(title, vodid, time, thumb string, prog *widget.ProgressBar, status
 	queueCmd = append(queueCmd, cmd)
 }
 
+//DelQueue 대기열 삭제
 func DelQueue(i int) {
 	// string
 	queueID = queueID[:i+copy(queueID[i:], queueID[i+1:])]
@@ -1689,6 +1728,7 @@ func DelQueue(i int) {
 	queueCmd = queueCmd[:i+copy(queueCmd[i:], queueCmd[i+1:])]
 }
 
+//MoreView 대기열 창
 func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 	queue := widget.NewGroup("대기열")
 

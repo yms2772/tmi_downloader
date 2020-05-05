@@ -7,30 +7,35 @@ import (
 	"fyne.io/fyne"
 )
 
-type TMI struct { // TMI Download API 구조체
+//TMI TMI Download API 구조체
+type TMI struct {
 	Result bool   `json:"result"`
 	Data   string `json:"data"`
 	Code   int    `json:"code"`
 }
 
-type Status struct { // 업데이트 정보 구조체
+//Status 업데이트 정보 구조체
+type Status struct {
 	Version string `json:"version"`
 	NoteKO  string `json:"note_ko"`
 	NoteEN  string `json:"note_en"`
 }
 
-type TwitchVOD struct { // Twitch v5 Videos Reference - Get Video 구조체
+//TwitchVOD Twitch v5 Videos Reference - Get Video 구조체
+type TwitchVOD struct {
 	MutedSegments []struct {
 		Duration int `json:"duration"`
 		Offset   int `json:"offset"`
 	} `json:"muted_segments"`
 }
 
-type TwitchOAuth2 struct { // Twitch OAuth2 구조체
+//TwitchOAuth2 Twitch OAuth2 구조체
+type TwitchOAuth2 struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 }
 
+//TwitchUser Twitch Users 구조체
 type TwitchUser struct {
 	DisplayName string `json:"display_name"`
 	ID          string `json:"_id"`
@@ -38,24 +43,29 @@ type TwitchUser struct {
 	Email       string `json:"email"`
 }
 
-type counter struct { // goroutine Counter 구조체
+//counter goroutine Counter 구조체
+type counter struct {
 	i  int
 	mu sync.Mutex
 }
 
+//HumanReadableError Twitch OAuth2
 type HumanReadableError interface {
 	HumanError() string
 	HTTPCode() int
 }
 
+//HumanReadableWrapper Twitch OAuth2
 type HumanReadableWrapper struct {
 	ToHuman string
 	Code    int
 	error
 }
 
+//Handler Twitch OAuth2
 type Handler func(http.ResponseWriter, *http.Request) error
 
+//appInfo GUI App 정보
 type appInfo struct {
 	name string
 	icon fyne.Resource

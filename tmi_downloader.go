@@ -80,7 +80,7 @@ func main() { // 메인
 	appInfo.icon = icon
 
 	a.SetIcon(appInfo.icon)
-	a.Settings().SetTheme(newCustomTheme(theme.TextFont()))
+	a.Settings().SetTheme(NewCustomTheme(theme.TextFont()))
 
 	drv := fyne.CurrentApp().Driver().(desktop.Driver)
 
