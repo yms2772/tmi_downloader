@@ -21,13 +21,6 @@ const ( // API
 	allinone = "https://dl.tmi.tips/api/allinone"
 )
 
-const (
-	B  = 1
-	KB = 1024 * B
-	MB = 1024 * KB
-	GB = 1024 * MB
-)
-
 var ( // Main 변수
 	version        = "20200427"
 	title          = "TMI Downloader"
