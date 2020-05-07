@@ -320,6 +320,15 @@ func main() { // 메인
 			twitchUserID = twitchUser.ID
 			twitchUserEmail = twitchUser.Email
 
+			helixClient, err = helix.NewClient(&helix.Options{
+				UserAccessToken: twitchAccessToken,
+				ClientID:        clientID,
+				ClientSecret:    clientSecret,
+				Scopes:          scopes,
+				RedirectURI:     redirectURL,
+			})
+			ErrHandle(err)
+
 			fmt.Println("Twitch Access Token: " + twitchAccessToken)
 			fmt.Println("Username: " + twitchDisplayName)
 
@@ -431,7 +440,7 @@ func main() { // 메인
 		w.SetMaster()
 		w.Resize(fyne.NewSize(420, 180))
 
-		checkClipboard = false // 클립보드 감지 시작
+		checkClipboard = false // 클립보드 감지
 
 		splWindow.Close()
 		w.Show()
