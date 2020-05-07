@@ -53,7 +53,7 @@ func CheckChrome() bool {
 	return true // Chrome이 있으면
 }
 
-//FindElem 슬라이스 쿼리
+//FindElem 배열 쿼리
 func FindElem(a []string, x string) int {
 	for i, n := range a {
 		if x == n {
@@ -63,7 +63,7 @@ func FindElem(a []string, x string) int {
 	return len(a)
 }
 
-//ContainsElem 슬라이스 확인
+//ContainsElem 배열 확인
 func ContainsElem(a []string, x string) bool {
 	for _, n := range a {
 		if x == n {
@@ -460,7 +460,7 @@ func ClearDir(dir string) { // 폴더 내 모든 파일 삭제
 	files, _ := filepath.Glob(filepath.Join(dir, "*"))
 
 	for _, file := range files {
-		os.RemoveAll(file)
+		_ = os.RemoveAll(file)
 	}
 }
 
