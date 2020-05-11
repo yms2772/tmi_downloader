@@ -22,7 +22,7 @@ const ( // API
 )
 
 var ( // Main 변수
-	version        = "20200427"
+	version        = "20200511"
 	title          = "TMI Downloader"
 	dirTemp        = VarOS("dirTemp")
 	dirBin         = VarOS("dirBin")

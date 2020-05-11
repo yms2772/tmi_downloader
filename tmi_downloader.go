@@ -20,7 +20,6 @@ import (
 	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
 
-	"github.com/cavaliercoder/grab"
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/nicklaw5/helix"
 	"github.com/tidwall/gjson"
@@ -140,12 +139,12 @@ func main() { // 메인
 			splWindow.SetContent(SplBox(loadLang("downloadNecessary"), logoImage))
 
 			if os.IsNotExist(noFont) {
-				_, err = grab.Get(fontInfo, "https://drive.google.com/uc?export=download&id=1vgGD1E0Zx0EWU6tfA39q-3blRYUxaY2d") // 폰트 다운로드
+				Download(fontInfo, "https://drive.google.com/uc?export=download&id=1vgGD1E0Zx0EWU6tfA39q-3blRYUxaY2d") // 폰트 다운로드
 				ErrHandle(err)
 			}
 
 			if _, err := os.Stat(dirBin + "/" + ffmpegBinary); os.IsNotExist(err) {
-				_, err = grab.Get(dirBin+`/ffmpeg.tar.gz`, ffmpegURL) // ffmpeg 다운로드
+				Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL) // ffmpeg 다운로드
 				ErrHandle(err)
 
 				r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
@@ -308,18 +307,6 @@ func main() { // 메인
 				}
 			}
 
-			twitchUserData, err := jsonParseTwitchWithToken("https://api.twitch.tv/kraken/user", twitchAccessToken)
-			ErrHandle(err)
-
-			var twitchUser TwitchUser
-			err = json.Unmarshal(twitchUserData, &twitchUser)
-			ErrHandle(err)
-
-			twitchDisplayName = twitchUser.DisplayName
-			twitchUserName = twitchUser.Name
-			twitchUserID = twitchUser.ID
-			twitchUserEmail = twitchUser.Email
-
 			helixClient, err = helix.NewClient(&helix.Options{
 				UserAccessToken: twitchAccessToken,
 				ClientID:        clientID,
@@ -328,6 +315,13 @@ func main() { // 메인
 				RedirectURI:     redirectURL,
 			})
 			ErrHandle(err)
+
+			twitchUserData, _ := helixClient.GetUsers(&helix.UsersParams{})
+
+			twitchDisplayName = twitchUserData.Data.Users[0].DisplayName
+			twitchUserName = twitchUserData.Data.Users[0].Login
+			twitchUserID = twitchUserData.Data.Users[0].ID
+			twitchUserEmail = twitchUserData.Data.Users[0].Email
 
 			fmt.Println("Twitch Access Token: " + twitchAccessToken)
 			fmt.Println("Username: " + twitchDisplayName)
@@ -394,7 +388,7 @@ func main() { // 메인
 					prog.SetValue(0.5)
 					prog.Show()
 
-					_, err = grab.Get(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
+					Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
 					ErrHandle(err)
 
 					r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
