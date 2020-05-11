@@ -32,7 +32,7 @@ import (
 	"fyne.io/fyne/layout"
 	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
-	"github.com/cavaliercoder/grab"
+
 	"github.com/dariubs/percent"
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/martinlindhe/notify"
@@ -41,6 +41,7 @@ import (
 	dlog "github.com/sqweek/dialog"
 	"github.com/tidwall/gjson"
 	"github.com/zserge/lorca"
+
 	"gopkg.in/ini.v1"
 )
 
@@ -410,6 +411,20 @@ func Untar(dst string, r io.Reader) error { // tar.gz 압축해제
 	}
 }
 
+//Download 다운로드
+func Download(filepath string, url string) {
+	out, err := os.Create(filepath)
+	ErrHandle(err)
+	defer out.Close()
+
+	resp, err := http.Get(url)
+	ErrHandle(err)
+	defer resp.Body.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	ErrHandle(err)
+}
+
 //DownloadFile Twitch ts파일 다운로드
 func DownloadFile(filepath string, url string, tsN string) error { // ts 파일 다운로드
 	tsURL := url + "chunked" + "/" + tsN + ".ts"
@@ -422,11 +437,9 @@ func DownloadFile(filepath string, url string, tsN string) error { // ts 파일 
 	if status.StatusCode == 403 {
 		tsURL := url + "chunked" + "/" + tsN + "-muted.ts"
 
-		_, err = grab.Get(filepath, tsURL)
-		ErrHandle(err)
+		Download(filepath, tsURL)
 	} else {
-		_, err = grab.Get(filepath, tsURL)
-		ErrHandle(err)
+		Download(filepath, tsURL)
 	}
 
 	defer status.Body.Close()
@@ -449,7 +462,7 @@ func RecordFile(filepath string, url string, tsN string) (string, error) { // ts
 		return "error", err
 	}
 
-	_, err = grab.Get(filepath, tsURL)
+	Download(filepath, tsURL)
 	ErrHandle(err)
 
 	return "pass", nil
@@ -501,7 +514,7 @@ func jsonParse(url string) ([]byte, error) {
 		return []byte("error"), err
 	}
 
-	client := &http.Client{Timeout: time.Second * 10}
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return []byte("error"), err
@@ -527,34 +540,7 @@ func jsonParseTwitch(url string) ([]byte, error) {
 	req.Header.Add("Accept", "application/vnd.twitchtv.v5+json")
 	req.Header.Add("Client-ID", clientID)
 
-	client := &http.Client{Timeout: time.Second * 10}
-	resp, err := client.Do(req)
-	if err != nil {
-		return []byte("error"), err
-	}
-
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return []byte("error"), err
-	}
-
-	return body, nil
-}
-
-//jsonParseTwitchWithToken json 파싱 (Twitch API 헤더 추가)
-func jsonParseTwitchWithToken(url, token string) ([]byte, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return []byte("error"), err
-	}
-
-	req.Header.Add("Accept", "application/vnd.twitchtv.v5+json")
-	req.Header.Add("Client-ID", clientID)
-	req.Header.Add("Authorization", "OAuth "+token)
-
-	client := &http.Client{Timeout: time.Second * 10}
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return []byte("error"), err
@@ -1289,10 +1275,10 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 				ErrHandle(err)
 
 				if vodType == "highlight" {
-					_, err = grab.Get(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+vodID+".m3u8")
+					Download(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+vodID+".m3u8")
 					ErrHandle(err)
 				} else {
-					_, err = grab.Get(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
+					Download(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
 					ErrHandle(err)
 				}
 
@@ -1685,7 +1671,7 @@ func AddQueue(title, vodid, time, thumb string, prog *widget.ProgressBar, status
 	fmt.Println("Time: " + time)
 	fmt.Println("Thumbnail: " + thumb)
 
-	_, err = grab.Get(fmt.Sprintf("%s/%s.jpg", dirThumb, vodid), thumb)
+	Download(fmt.Sprintf("%s/%s.jpg", dirThumb, vodid), thumb)
 	ErrHandle(err)
 
 	// string
