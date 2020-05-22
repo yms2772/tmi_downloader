@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
 	"flag"
@@ -48,18 +47,7 @@ func main() { // 메인
 	}
 
 	if _, err := os.Stat(dirBin + "/logo.png"); os.IsNotExist(err) {
-		dec, err := base64.StdEncoding.DecodeString(logoBase64)
-		ErrHandle(err)
-
-		f, err := os.Create(dirBin + "/logo.png")
-		ErrHandle(err)
-		defer f.Close()
-
-		_, err = f.Write(dec)
-		ErrHandle(err)
-
-		err = f.Sync()
-		ErrHandle(err)
+		WriteBase64(dirBin+"/logo.png", logoBase64)
 	}
 
 	logoImage := &canvas.Image{
@@ -103,6 +91,9 @@ func main() { // 메인
 	}
 
 	err = os.MkdirAll(dirBin, 0777)
+	ErrHandle(err)
+
+	err = os.MkdirAll(dirWebFonts, 0777)
 	ErrHandle(err)
 
 	err = os.MkdirAll(dirThumb, 0777)

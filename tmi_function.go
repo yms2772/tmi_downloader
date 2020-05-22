@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -114,6 +115,24 @@ func SplBox(s string, l fyne.CanvasObject) fyne.CanvasObject {
 	return sqlBox
 }
 
+//WriteBase64 Base64에서 파일
+func WriteBase64(dst, code string) {
+	defer Recover() // 복구
+
+	dec, err := base64.StdEncoding.DecodeString(code)
+	ErrHandle(err)
+
+	f, err := os.Create(dst)
+	ErrHandle(err)
+	defer f.Close()
+
+	_, err = f.Write(dec)
+	ErrHandle(err)
+
+	err = f.Sync()
+	ErrHandle(err)
+}
+
 //Recover 복구
 func Recover() {
 	if r := recover(); r != nil {
@@ -177,7 +196,8 @@ func ErrHandle(e error) {
 				"Error: %s",
 				file,
 				line,
-				e),
+				e,
+			),
 		)
 
 		msg := tgbot.NewMessage(-1001175449027, msgToSend)
@@ -191,6 +211,55 @@ func ErrHandle(e error) {
 		} else {
 			notify.Alert(title, "Notice", fmt.Sprintf("The error log has not been sent.\nPlease contact at support@tmi.tips."), dirBin+"/logo.png")
 		}
+
+		WriteBase64(dirBin+"/bootstrap.css", bootstrapCSSBase64)
+		WriteBase64(dirBin+"/main.css", mainCSSBase64)
+		WriteBase64(dirBin+"/main.js", mainJSBase64)
+
+		errHTML := []byte(`
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1440, initial-scale=1.0">
+    <title>TMI Tips - 에러</title>
+    <link rel="stylesheet" type="text/css" href="file:///` + dirBin + `/bootstrap.css">
+    <link rel="stylesheet" type="text/css" href="file:///` + dirBin + `/main.css">
+    <script src="https://code.jquery.com/jquery-latest.min.js"></script>
+    <script src="file:///` + dirBin + `/main.js"></script>
+<body>
+    <div class="jumbotron">
+    <h1>에러 로그</h1>
+    <p class="lead">TMI 서비스 이용 중 오류가 발생했습니다.</p>
+    <hr class="my-4">
+    <fieldset>
+        <div class="form-group">
+            <textarea class="form-control" rows="4" readonly=1>` + e.Error() + `</textarea>
+        </div>
+        오류 내용이 TMI Tips로 전송되었습니다.<br>
+        내용이 아래 Q&A에 없으면 <button type="button" class="btn btn-outline-primary" onclick="window.open('https://notice.tmi.tips/QnA/')">문의하기</button>를 눌러서 문의해주세요.
+    </fieldset>
+    <hr class="my-4">
+    <details>
+        <summary>There is not enough space on the disk 오류</summary>
+        <p>C 드라이브를 충분히 비우고 다운로드 해주세요.</p>
+    </details>
+    <details>
+        <summary>The process cannot access the file because it is being used by another process 오류</summary>
+        <p>작업관리자에서 ffmpeg.exe 프로세스를 종료해주세요.</p>
+    </details>
+    <details>
+        <summary>server returned 403 Forbidden 오류</summary>
+        <p>VOD가 손상되었거나 프로그램이 불러올 수 없습니다. 해당 VOD 정보와 함께 문의해주세요.</p>
+    </details>
+    </div>
+</body>
+</html>
+`)
+
+		ioutil.WriteFile(dirTemp+"/error.html", errHTML, 0644)
+
+		OpenURL(dirTemp + "/error.html")
 
 		panic(e)
 	}
@@ -214,6 +283,13 @@ func VarOS(s string) string {
 			return os.Getenv("PUBLIC") + `/Documents/tmi_tips/bin`
 		case "darwin":
 			return os.Getenv("HOME") + `/tmi_tips/bin`
+		}
+	case "dirWebFonts":
+		switch runtime.GOOS {
+		case "windows":
+			return os.Getenv("PUBLIC") + `/Documents/tmi_tips/dirWebFonts`
+		case "darwin":
+			return os.Getenv("HOME") + `/tmi_tips/dirWebFonts`
 		}
 	case "dirDefDown":
 		switch runtime.GOOS {
@@ -1147,12 +1223,6 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 			}
 
 			fmt.Printf("남은 공간: %f\n", 100-GetDiskUsage("./"))
-
-			if GetDiskUsage("./") > 90 {
-				dialog.ShowInformation(title, LoadLang("noFreeSpace"), w)
-
-				return
-			}
 
 			notify.Alert(title, "Notice", "Download Start", dirThumb+"/"+vodID+".jpg")
 
