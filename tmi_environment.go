@@ -26,9 +26,10 @@ var ( // Main 변수
 	title          = "TMI Downloader"
 	dirTemp        = VarOS("dirTemp")
 	dirBin         = VarOS("dirBin")
+	dirWebFonts    = VarOS("dirWebFonts")
 	dirDefDown     = VarOS("dirDefDown")
 	dirThumb       = dirTemp + "/thumb"
-	fontInfo       = dirBin + "/AppleSDGothicNeoB.ttf"
+	fontInfo       = dirWebFonts + "/AppleSDGothicNeoM.ttf"
 	ffmpegURL      = VarOS("ffmpegURL")
 	ffmpegBinary   = VarOS("ffmpegBinary")
 	lang           = SetLang()
