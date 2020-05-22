@@ -22,7 +22,7 @@ const ( // API
 )
 
 var ( // Main 변수
-	version        = "20200511"
+	version        = "20200523"
 	title          = "TMI Downloader"
 	dirTemp        = VarOS("dirTemp")
 	dirBin         = VarOS("dirBin")
@@ -31,7 +31,7 @@ var ( // Main 변수
 	fontInfo       = dirBin + "/AppleSDGothicNeoB.ttf"
 	ffmpegURL      = VarOS("ffmpegURL")
 	ffmpegBinary   = VarOS("ffmpegBinary")
-	lang           = setLang()
+	lang           = SetLang()
 	chromeStatus   = CheckChrome()
 	checkClipboard bool
 	err            error

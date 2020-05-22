@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +48,8 @@ import (
 
 //CheckChrome Chrome 체크
 func CheckChrome() bool {
+	defer Recover() // 복구
+
 	if len(lorca.LocateChrome()) == 0 {
 		return false // Chrome이 없으면
 	}
@@ -56,6 +59,8 @@ func CheckChrome() bool {
 
 //FindElem 배열 쿼리
 func FindElem(a []string, x string) int {
+	defer Recover() // 복구
+
 	for i, n := range a {
 		if x == n {
 			return i
@@ -66,6 +71,8 @@ func FindElem(a []string, x string) int {
 
 //ContainsElem 배열 확인
 func ContainsElem(a []string, x string) bool {
+	defer Recover() // 복구
+
 	for _, n := range a {
 		if x == n {
 			return true
@@ -76,6 +83,8 @@ func ContainsElem(a []string, x string) bool {
 
 //OpenURL URL 열기
 func OpenURL(url string) *exec.Cmd {
+	defer Recover() // 복구
+
 	var cmdOpenURL *exec.Cmd
 
 	switch runtime.GOOS {
@@ -95,6 +104,8 @@ func OpenURL(url string) *exec.Cmd {
 
 //SplBox 스플릿 창 텍스트
 func SplBox(s string, l fyne.CanvasObject) fyne.CanvasObject {
+	defer Recover() // 복구
+
 	sqlBox := fyne.NewContainerWithLayout(
 		layout.NewBorderLayout(l, nil, nil, widget.NewLabel(s)),
 		l, widget.NewLabel(s),
@@ -103,14 +114,22 @@ func SplBox(s string, l fyne.CanvasObject) fyne.CanvasObject {
 	return sqlBox
 }
 
+//Recover 복구
+func Recover() {
+	if r := recover(); r != nil {
+		fmt.Println("복구됨", r)
+		debug.PrintStack()
+	}
+
+	fmt.Println("Pass")
+}
+
 //ErrHandle 에러 핸들링
 func ErrHandle(e error) {
+	defer Recover() // 복구
+
 	if e != nil {
 		_, file, line, _ := runtime.Caller(1)
-
-		errMsg := e
-
-		fmt.Printf("File: %s\nLine: %d\nError: %s\n", file, line, errMsg)
 
 		if len(twitchAccessToken) == 0 {
 			twitchAccessToken = "로그인 정보 없음"
@@ -153,7 +172,12 @@ func ErrHandle(e error) {
 			twitchAccessToken,
 			twitchRefreshToken,
 			strings.Join(queueID, ", "),
-			fmt.Sprintf("File: %s\nLine: %d\nError: %s", file, line, errMsg),
+			fmt.Sprintf("File: %s\n"+
+				"Line: %d\n"+
+				"Error: %s",
+				file,
+				line,
+				e),
 		)
 
 		msg := tgbot.NewMessage(-1001175449027, msgToSend)
@@ -161,19 +185,21 @@ func ErrHandle(e error) {
 		msg.ParseMode = "Markdown"
 		msg.DisableWebPagePreview = true
 
-		_, err := bot.Send(msg)
+		_, err = bot.Send(msg)
 		if err == nil {
 			notify.Alert(title, "Notice", fmt.Sprintf("The error log has been sent.\nWe will fix it as soon as possible."), dirBin+"/logo.png")
 		} else {
 			notify.Alert(title, "Notice", fmt.Sprintf("The error log has not been sent.\nPlease contact at support@tmi.tips."), dirBin+"/logo.png")
 		}
 
-		os.Exit(1)
+		panic(e)
 	}
 }
 
 //VarOS OS별 변수
 func VarOS(s string) string {
+	defer Recover() // 복구
+
 	switch s {
 	case "dirTemp":
 		switch runtime.GOOS {
@@ -217,7 +243,9 @@ func VarOS(s string) string {
 
 //CheckUpdate 업데이트 체크
 func CheckUpdate() (bool, string) {
-	body, err := jsonParse("https://dl.tmi.tips/bin/tmi_downloader.json")
+	defer Recover() // 복구
+
+	body, err := JsonParse("https://dl.tmi.tips/bin/tmi_downloader.json")
 	ErrHandle(err)
 
 	var tmiStatus Status
@@ -227,7 +255,7 @@ func CheckUpdate() (bool, string) {
 	newVersion := tmiStatus.Version
 
 	var updateNote string
-	if loadLang("lang") == "ko" {
+	if LoadLang("lang") == "ko" {
 		updateNote = tmiStatus.NoteKO
 	} else {
 		updateNote = tmiStatus.NoteEN
@@ -244,6 +272,8 @@ func CheckUpdate() (bool, string) {
 
 //HandleRoot Twitch OAuth2
 func HandleRoot(w http.ResponseWriter, _ *http.Request) (err error) { // Twitch OAuth2 Function
+	defer Recover() // 복구
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`<html><body><h1>Login Complete</h1><br>Please close this window</body></html>`))
@@ -253,6 +283,8 @@ func HandleRoot(w http.ResponseWriter, _ *http.Request) (err error) { // Twitch 
 
 //HandleLogin Twitch OAuth2
 func HandleLogin(w http.ResponseWriter, r *http.Request) (err error) {
+	defer Recover() // 복구
+
 	session, err := cookieStore.Get(r, oauthSessionName)
 	if err != nil {
 		log.Printf("corrupted session %s -- generated new", err)
@@ -279,6 +311,8 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) (err error) {
 
 //HandleOAuth2Callback Twitch OAuth2
 func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) (err error) {
+	defer Recover() // 복구
+
 	session, err := cookieStore.Get(r, oauthSessionName)
 	if err != nil {
 		log.Printf("corrupted session %s -- generated new", err)
@@ -325,16 +359,22 @@ func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) (err error) {
 
 //HumanError Twitch OAuth2
 func (h HumanReadableWrapper) HumanError() string {
+	defer Recover() // 복구
+
 	return h.ToHuman
 }
 
 //HTTPCode Twitch OAuth2
 func (h HumanReadableWrapper) HTTPCode() int {
+	defer Recover() // 복구
+
 	return h.Code
 }
 
 //AnnotateError Twitch OAuth2
 func AnnotateError(err error, annotation string) error {
+	defer Recover() // 복구
+
 	if err == nil {
 		return nil
 	}
@@ -343,6 +383,8 @@ func AnnotateError(err error, annotation string) error {
 
 //CryptoSHA256 SHA-256 암호화
 func CryptoSHA256(file string) string {
+	defer Recover() // 복구
+
 	f, err := os.Open(file)
 	if err != nil {
 		log.Fatal(err)
@@ -359,6 +401,8 @@ func CryptoSHA256(file string) string {
 
 //GetDiskUsage 디스크 사용량
 func GetDiskUsage(dst string) float32 {
+	defer Recover() // 복구
+
 	usage := du.NewDiskUsage(dst)
 
 	return usage.Usage() * 100
@@ -366,6 +410,8 @@ func GetDiskUsage(dst string) float32 {
 
 //Untar tar 압축 해제
 func Untar(dst string, r io.Reader) error { // tar.gz 압축해제
+	defer Recover() // 복구
+
 	gzr, err := gzip.NewReader(r)
 	if err != nil {
 		return err
@@ -413,6 +459,8 @@ func Untar(dst string, r io.Reader) error { // tar.gz 압축해제
 
 //Download 다운로드
 func Download(filepath string, url string) {
+	defer Recover() // 복구
+
 	out, err := os.Create(filepath)
 	ErrHandle(err)
 	defer out.Close()
@@ -427,6 +475,8 @@ func Download(filepath string, url string) {
 
 //DownloadFile Twitch ts파일 다운로드
 func DownloadFile(filepath string, url string, tsN string) error { // ts 파일 다운로드
+	defer Recover() // 복구
+
 	tsURL := url + "chunked" + "/" + tsN + ".ts"
 
 	status, err := http.Get(tsURL)
@@ -449,6 +499,8 @@ func DownloadFile(filepath string, url string, tsN string) error { // ts 파일 
 
 //RecordFile Twitch ts 파일 녹화
 func RecordFile(filepath string, url string, tsN string) (string, error) { // ts 파일 다운로드 (녹화)
+	defer Recover() // 복구
+
 	tsURL := url + "chunked" + "/" + tsN + ".ts"
 
 	status, err := http.Get(tsURL)
@@ -470,6 +522,8 @@ func RecordFile(filepath string, url string, tsN string) (string, error) { // ts
 
 //ClearDir 폴더 정리
 func ClearDir(dir string) { // 폴더 내 모든 파일 삭제
+	defer Recover() // 복구
+
 	files, _ := filepath.Glob(filepath.Join(dir, "*"))
 
 	for _, file := range files {
@@ -477,8 +531,10 @@ func ClearDir(dir string) { // 폴더 내 모든 파일 삭제
 	}
 }
 
-//tsFinder ts 개수 로드
-func tsFinder(token string) (int, error) {
+//TsFinder ts 개수 로드
+func TsFinder(token string) (int, error) {
+	defer Recover() // 복구
+
 	resp, err := http.Get("http://vod-secure.twitch.tv/" + token + "/chunked/index-dvr.m3u8")
 	if err != nil {
 		return 0, err
@@ -496,8 +552,10 @@ func tsFinder(token string) (int, error) {
 	return ts, nil
 }
 
-//makeINI setting.ini 생성
-func makeINI() {
+//MakeINI setting.ini 생성
+func MakeINI() {
+	defer Recover() // 복구
+
 	iniFile, err := os.OpenFile(dirBin+`/setting.ini`, os.O_CREATE|os.O_RDWR, os.FileMode(0644))
 	ErrHandle(err)
 
@@ -507,8 +565,10 @@ func makeINI() {
 	iniFile.Close()
 }
 
-//jsonParse json 파싱
-func jsonParse(url string) ([]byte, error) {
+//JsonParse json 파싱
+func JsonParse(url string) ([]byte, error) {
+	defer Recover() // 복구
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte("error"), err
@@ -530,8 +590,10 @@ func jsonParse(url string) ([]byte, error) {
 	return body, nil
 }
 
-//jsonParseTwitch json 파싱 (Twitch API 헤더 추가)
-func jsonParseTwitch(url string) ([]byte, error) {
+//JsonParseTwitch json 파싱 (Twitch API 헤더 추가)
+func JsonParseTwitch(url string) ([]byte, error) {
+	defer Recover() // 복구
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return []byte("error"), err
@@ -556,8 +618,10 @@ func jsonParseTwitch(url string) ([]byte, error) {
 	return body, nil
 }
 
-//keyCheck 코드 정규식 및 유효성 체크
-func keyCheck(cb string) (string, string, int, string, string, string) {
+//KeyCheck 코드 정규식 및 유효성 체크
+func KeyCheck(cb string) (string, string, int, string, string, string) {
+	defer Recover() // 복구
+
 	urlStr := strings.ReplaceAll(cb, " ", "")
 
 	isMatched, err := regexp.MatchString(`^(((http(s?))://)?)((www.)?)twitch.tv/videos/+\d{9}?$`, urlStr)
@@ -654,6 +718,8 @@ func keyCheck(cb string) (string, string, int, string, string, string) {
 
 //RunAgain 프로그램 재실행
 func RunAgain() {
+	defer Recover() // 복구
+
 	path, err := os.Executable()
 	ErrHandle(err)
 
@@ -663,21 +729,25 @@ func RunAgain() {
 	os.Exit(1)
 }
 
-//errINI setting.ini 에러 확인
-func errINI(e error) {
+//ErrINI setting.ini 에러 확인
+func ErrINI(e error) {
+	defer Recover() // 복구
+
 	if e != nil {
 		err = os.MkdirAll(dirBin, 0777)
 		ErrHandle(err)
 		err = os.MkdirAll(dirTemp, 0777)
 		ErrHandle(err)
 
-		makeINI()
+		MakeINI()
 		RunAgain()
 	}
 }
 
-//keyCheckRealTime 실시간 코드 정규식 확인
-func keyCheckRealTime(clp string) (bool, string) {
+//KeyCheckRealTime 실시간 코드 정규식 확인
+func KeyCheckRealTime(clp string) (bool, string) {
+	defer Recover() // 복구
+
 	isMatched, err := regexp.MatchString(`(http|https)://.*twitch.tv/videos/\d+`, clp)
 	ErrHandle(err)
 
@@ -689,15 +759,19 @@ func keyCheckRealTime(clp string) (bool, string) {
 }
 
 //setLang setting.ini system - DEFAULT_LANG 확인
-func setLang() string {
+func SetLang() string {
+	defer Recover() // 복구
+
 	cfg, err := ini.Load(dirBin + `/setting.ini`)
-	errINI(err)
+	ErrINI(err)
 
 	return cfg.Section("system").Key("DEFAULT_LANG").String()
 }
 
-//loadLang 언어 json 로드
-func loadLang(data string) string {
+//LoadLang 언어 json 로드
+func LoadLang(data string) string {
+	defer Recover() // 복구
+
 	switch lang {
 	case "English":
 		v := gjson.Get(langEN, data)
@@ -714,8 +788,10 @@ func loadLang(data string) string {
 	}
 }
 
-//errHTTP HTTP 에러
-func errHTTP(e error) int {
+//ErrHTTP HTTP 에러
+func ErrHTTP(e error) int {
+	defer Recover() // 복구
+
 	if e != nil {
 		return 1
 	}
@@ -723,8 +799,10 @@ func errHTTP(e error) int {
 	return 0
 }
 
-//increment goroutine 카운터 증가
-func (c *counter) increment() {
+//Increment goroutine 카운터 증가
+func (c *counter) Increment() {
+	defer Recover() // 복구
+
 	c.mu.Lock()
 	c.i++
 	c.mu.Unlock()
@@ -732,39 +810,48 @@ func (c *counter) increment() {
 
 //GetFirstQueue 대기열 첫번째 가져오기
 func GetFirstQueue() string {
+	defer Recover() // 복구
+
 	return queueID[0]
 }
 
 //DownloadHome 다운로드 홈
 func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
+	defer Recover() // 복구
+
 	keyEntry := widget.NewEntry()
-	keyEntry.SetPlaceHolder(loadLang("keyEntryHolder"))
+	keyEntry.SetPlaceHolder(LoadLang("keyEntryHolder"))
 
 	keyEntry.OnChanged = func(s string) {
+		if s == "errortest" {
+			ErrHandle(fmt.Errorf("%s", "Error Test\n에러 테스트"))
+			keyEntry.SetText("recovered")
+		}
+
 		if len(s) > 40 {
-			dialog.ShowInformation(title, loadLang("invalidCode"), w)
+			dialog.ShowInformation(title, LoadLang("invalidCode"), w)
 			keyEntry.SetText("")
 		}
 	}
 
 	cfg, err := ini.Load(dirBin + `/setting.ini`)
-	errINI(err)
+	ErrINI(err)
 
 	// MISC
 	resetOption, err := cfg.Section("misc").Key("RESET_OPTION").Bool()
-	errINI(err)
+	ErrINI(err)
 
 	if resetOption {
 		err = os.Remove(dirBin + `/setting.ini`)
 		ErrHandle(err)
 
-		makeINI()
+		MakeINI()
 
 		RunAgain()
 	}
 
 	var ssFFmpeg, toFFmpeg string
-	intervalCheck = widget.NewCheck(loadLang("intervalDownload"), func(c bool) {})
+	intervalCheck = widget.NewCheck(LoadLang("intervalDownload"), func(c bool) {})
 	intervalCheck.Show()
 
 	// 클립보드 자동 감지
@@ -774,7 +861,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 	go func() {
 		for {
 			if checkClipboard {
-				clpStatus, clp := keyCheckRealTime(w.Clipboard().Content())
+				clpStatus, clp := KeyCheckRealTime(w.Clipboard().Content())
 
 				if clpStatus {
 					if beforeClipboard == clp {
@@ -782,7 +869,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 						continue
 					}
 
-					ok := dialog.NewConfirm(title, loadLang("codeFound")+clp, func(res bool) {
+					ok := dialog.NewConfirm(title, LoadLang("codeFound")+clp, func(res bool) {
 						if res {
 							beforeClipboard = clp
 							keyEntry.SetText(clp)
@@ -791,8 +878,8 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 						}
 					}, w)
 
-					ok.SetConfirmText(loadLang("confirm"))
-					ok.SetDismissText(loadLang("dismiss"))
+					ok.SetConfirmText(LoadLang("confirm"))
+					ok.SetDismissText(LoadLang("dismiss"))
 					ok.Show()
 				}
 			}
@@ -801,7 +888,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 		}
 	}()
 
-	button = widget.NewButtonWithIcon(loadLang("runButton"), theme.MoveDownIcon(), func() {
+	button = widget.NewButtonWithIcon(LoadLang("runButton"), theme.MoveDownIcon(), func() {
 		go func() {
 			progRun := dialog.NewProgressInfinite(title, "영상 불러오는 중...", w)
 			progRun.Show()
@@ -810,52 +897,52 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 			c := counter{i: 0}
 
 			cfg, err := ini.Load(dirBin + `/setting.ini`)
-			errINI(err)
+			ErrINI(err)
 
 			// MAIN
 			maxConnection, err := cfg.Section("main").Key("MAX_CONNECTION").Int()
-			errINI(err)
+			ErrINI(err)
 			downloadPath := cfg.Section("main").Key("DOWNLOAD_DIR").String()
 			downloadOption := cfg.Section("main").Key("DOWNLOAD_OPTION").String()
 			if len(downloadOption) == 0 {
-				makeINI()
+				MakeINI()
 				downloadOption = "Multi"
 			}
 
 			// ENCODE
 			encoding, err := cfg.Section("encode").Key("ENCODING").Bool()
-			errINI(err)
+			ErrINI(err)
 			encodingType := cfg.Section("encode").Key("ENCODING_TYPE").String()
 
 			if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
-				dialog.ShowInformation(title, loadLang("wrongLocation")+downloadPath, w)
+				dialog.ShowInformation(title, LoadLang("wrongLocation")+downloadPath, w)
 				return
 			}
 
 			if encoding {
 				if _, err := os.Stat(dirBin + "/" + ffmpegBinary); os.IsNotExist(err) {
-					dialog.ShowInformation(title, loadLang("errRequireFile"), w)
+					dialog.ShowInformation(title, LoadLang("errRequireFile"), w)
 					return
 				}
 			}
 
 			clipboard := keyEntry.Text
-			vodToken, vodID, vodTimeInt, vodType, vodTitle, vodThumbnail := keyCheck(clipboard) // 대기열
+			vodToken, vodID, vodTimeInt, vodType, vodTitle, vodThumbnail := KeyCheck(clipboard) // 대기열
 
 			if vodToken == "error" {
 				progRun.Hide()
 
 				switch vodTimeInt {
 				case 401:
-					dialog.ShowConfirm(title, loadLang("notSubscriber"), func(b bool) {
+					dialog.ShowConfirm(title, LoadLang("notSubscriber"), func(b bool) {
 						if b {
 							OpenURL(fmt.Sprintf("https://www.twitch.tv/products/%s/ticket/new", vodID))
 						}
 					}, w)
 				case 500:
-					dialog.ShowInformation(title, loadLang("invalidCode"), w)
+					dialog.ShowInformation(title, LoadLang("invalidCode"), w)
 				default:
-					dialog.ShowInformation(title, loadLang("unknownError"), w)
+					dialog.ShowInformation(title, LoadLang("unknownError"), w)
 				}
 
 				keyEntry.SetText("")
@@ -865,7 +952,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 			if ContainsElem(queueID, vodID) {
 				progRun.Hide()
 
-				dialog.ShowInformation(title, loadLang("alreadyAdded"), w)
+				dialog.ShowInformation(title, LoadLang("alreadyAdded"), w)
 				keyEntry.SetText("")
 
 				return
@@ -879,11 +966,11 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 
 			if vodType == "highlight" {
 				downloadOption = "Single"
-				dialog.ShowInformation(title, loadLang("highlightNotice"), w)
+				dialog.ShowInformation(title, LoadLang("highlightNotice"), w)
 			}
 
 			if intervalCheck.Checked { // 구간 설정
-				intervalProg := dialog.NewProgressInfinite(title, loadLang("setIntervalRange"), w)
+				intervalProg := dialog.NewProgressInfinite(title, LoadLang("setIntervalRange"), w)
 				intervalProg.Show()
 
 				intervalW := fyne.CurrentApp().NewWindow(title)
@@ -932,20 +1019,20 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 				intervalStart := fyne.NewContainerWithLayout(layout.NewGridLayout(7),
 					intervalStartCheck,
 					startHourSet,
-					widget.NewLabel(loadLang("intervalHour")),
+					widget.NewLabel(LoadLang("intervalHour")),
 					startMinSet,
-					widget.NewLabel(loadLang("intervalMin")),
+					widget.NewLabel(LoadLang("intervalMin")),
 					startSecSet,
-					widget.NewLabel(loadLang("intervalSec")),
+					widget.NewLabel(LoadLang("intervalSec")),
 				)
 				intervalStop := fyne.NewContainerWithLayout(layout.NewGridLayout(7),
 					intervalStopCheck,
 					stopHourSet,
-					widget.NewLabel(loadLang("intervalHour")),
+					widget.NewLabel(LoadLang("intervalHour")),
 					stopMinSet,
-					widget.NewLabel(loadLang("intervalMin")),
+					widget.NewLabel(LoadLang("intervalMin")),
 					stopSecSet,
-					widget.NewLabel(loadLang("intervalSec")),
+					widget.NewLabel(LoadLang("intervalSec")),
 				)
 
 				startHourSet.SetText("00")
@@ -976,7 +1063,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 						isMatchedStopSec := r.MatchString(stopSecSet.Text)
 
 						if !isMatchedStartHour || !isMatchedStartMin || !isMatchedStartSec || !isMatchedStopHour || !isMatchedStopMin || !isMatchedStopSec {
-							dialog.ShowInformation(title, loadLang("errorLoadTime"), w)
+							dialog.ShowInformation(title, LoadLang("errorLoadTime"), w)
 							intervalCheck.SetChecked(false)
 						} else {
 							ssFFmpeg = fmt.Sprintf("%s:%s:%s", startHourSet.Text, startMinSet.Text, startSecSet.Text)
@@ -985,14 +1072,14 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 
 						intervalDone = 1
 
-						dialog.NewProgressInfinite(title, loadLang("intervalRangeSaved"), intervalW).Show()
+						dialog.NewProgressInfinite(title, LoadLang("intervalRangeSaved"), intervalW).Show()
 					},
 				}
-				form.Append(loadLang("intervalStart"), intervalStart)
-				form.Append(loadLang("intervalStop"), intervalStop)
+				form.Append(LoadLang("intervalStart"), intervalStart)
+				form.Append(LoadLang("intervalStop"), intervalStop)
 
 				content := widget.NewVBox(
-					widget.NewGroup(loadLang("tabSetting"),
+					widget.NewGroup(LoadLang("tabSetting"),
 						form,
 					),
 				)
@@ -1018,9 +1105,9 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 				intervalProg.Hide()
 			}
 
-			tsInt, err := tsFinder(vodToken)
-			if errHTTP(err) != 0 {
-				dialog.ShowInformation(title, loadLang("errorHTTP"), w)
+			tsInt, err := TsFinder(vodToken)
+			if ErrHTTP(err) != 0 {
+				dialog.ShowInformation(title, LoadLang("errorHTTP"), w)
 				time.Sleep(5 * time.Second)
 				os.Exit(1)
 			}
@@ -1038,14 +1125,14 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 			progressBar := widget.NewProgressBar() // 대기열
 
 			status := widget.NewLabel("...") // 대기열
-			status.SetText(loadLang("waitForDownload"))
+			status.SetText(LoadLang("waitForDownload"))
 
 			progressStatus := widget.NewEntry() // 대기열
 			progressStatus.SetText("wait")
 
 			progressStatus.OnChanged = func(s string) {
 				if s == "press_stop" {
-					status.SetText(status.Text + " " + loadLang("canceled"))
+					status.SetText(status.Text + " " + LoadLang("canceled"))
 				}
 			}
 
@@ -1053,7 +1140,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 
 			keyEntry.SetText("")
 			progRun.Hide()
-			dialog.ShowInformation(title, loadLang("addedQueue"), w)
+			dialog.ShowInformation(title, LoadLang("addedQueue"), w)
 
 			for GetFirstQueue() != vodID {
 				time.Sleep(1 * time.Second)
@@ -1062,7 +1149,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 			fmt.Printf("남은 공간: %f\n", 100-GetDiskUsage("./"))
 
 			if GetDiskUsage("./") > 90 {
-				dialog.ShowInformation(title, loadLang("noFreeSpace"), w)
+				dialog.ShowInformation(title, LoadLang("noFreeSpace"), w)
 
 				return
 			}
@@ -1093,7 +1180,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 						err = DownloadFile(filename, tsURL, iS)
 						ErrHandle(err)
 
-						c.increment()
+						c.Increment()
 						wg.Done()
 					}(i)
 
@@ -1113,12 +1200,12 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 								gState := c.i
 
 								if gState == 0 {
-									status.SetText(loadLang("waitForDownload"))
+									status.SetText(LoadLang("waitForDownload"))
 								} else {
 									if gState == (dCycle-1)*maxConnection {
-										status.SetText(loadLang("addQueue"))
+										status.SetText(LoadLang("addQueue"))
 									} else {
-										status.SetText(loadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
+										status.SetText(LoadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
 										progressBar.SetValue(float64(gState) / float64(tsI))
 										fmt.Printf("%d | %d\n", gState, tsI)
 									}
@@ -1141,11 +1228,11 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 					gState := c.i
 
 					if gState < 1 {
-						status.SetText(loadLang("waitForDownload"))
+						status.SetText(LoadLang("waitForDownload"))
 						time.Sleep(1 * time.Second)
 						fmt.Printf("%d | %d\n", gState, tsI)
 					} else {
-						status.SetText(loadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
+						status.SetText(LoadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
 						progressBar.SetValue(float64(gState) / float64(tsI))
 						fmt.Printf("%d | %d\n", gState, tsI)
 						if gState >= tsI {
@@ -1157,10 +1244,10 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 				}
 
 				queueProgStatus[FindElem(queueID, vodID)].SetText("wait_incomplete_download")
-				status.SetText(loadLang("waitIncompleteDownload"))
+				status.SetText(LoadLang("waitIncompleteDownload"))
 				wg.Wait()
 
-				status.SetText(loadLang("generateFile"))
+				status.SetText(LoadLang("generateFile"))
 				out, err := os.OpenFile(tempDirectory+`/`+vodID+`.ts`, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 				ErrHandle(err)
 
@@ -1173,7 +1260,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 
 					iS := strconv.Itoa(i)
 
-					status.SetText(loadLang("merging") + " " + strconv.FormatFloat(percent.PercentOf(i, tsI), 'f', 2, 64) + "%")
+					status.SetText(LoadLang("merging") + " " + strconv.FormatFloat(percent.PercentOf(i, tsI), 'f', 2, 64) + "%")
 					progressBar.SetValue(float64(i) / float64(tsI))
 
 					filename, err := os.Open(tempDirectory + `/` + iS + ".ts")
@@ -1190,7 +1277,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 					ErrHandle(err)
 
 					progressBar.SetValue(0)
-					status.SetText(loadLang("encoding"))
+					status.SetText(LoadLang("encoding"))
 
 					cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-y", "-i", tempDirectory+`/`+vodID+`.ts`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
 
@@ -1263,9 +1350,9 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 
 				// M3U8 수정
 				queueProgStatus[FindElem(queueID, vodID)].SetText("loadFile")
-				body, err := jsonParseTwitch("https://api.twitch.tv/kraken/videos/" + vodID)
-				if errHTTP(err) != 0 {
-					dialog.ShowInformation(title, loadLang("errorHTTP"), w)
+				body, err := JsonParseTwitch("https://api.twitch.tv/kraken/videos/" + vodID)
+				if ErrHTTP(err) != 0 {
+					dialog.ShowInformation(title, LoadLang("errorHTTP"), w)
 					time.Sleep(5 * time.Second)
 					os.Exit(1)
 				}
@@ -1359,7 +1446,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 							continue
 						}
 
-						status.SetText(loadLang("downloadAndEncode"))
+						status.SetText(LoadLang("downloadAndEncode"))
 						progressBar.SetValue(float64(numFFmpeg) / float64(tsI))
 					}
 
@@ -1381,8 +1468,8 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 					filename := tempDirectory + `/` + tsNumStr + `.ts`
 
 					recStatus, err := RecordFile(filename, "http://vod-secure.twitch.tv/"+vodToken+"/", tsNumStr)
-					if errHTTP(err) != 0 {
-						dialog.ShowInformation(title, loadLang("errorHTTP"), w)
+					if ErrHTTP(err) != 0 {
+						dialog.ShowInformation(title, LoadLang("errorHTTP"), w)
 						time.Sleep(5 * time.Second)
 						os.Exit(1)
 					}
@@ -1432,7 +1519,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 						timeMinute := strings.Split(timeFFmpeg, " ")[1]
 						timeSecond := strings.Split(timeFFmpeg, " ")[2]
 
-						status.SetText(loadLang("recording") + " | " + timeHour + " h " + timeMinute + "m " + timeSecond + "s | " + tsNumStr)
+						status.SetText(LoadLang("recording") + " | " + timeHour + " h " + timeMinute + "m " + timeSecond + "s | " + tsNumStr)
 					}
 					err = cmd.Wait()
 					ErrHandle(err)
@@ -1508,7 +1595,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 
 			ClearDir(tempDirectory)
 
-			status.SetText(loadLang("downloadComplete"))
+			status.SetText(LoadLang("downloadComplete"))
 
 			OpenURL(downloadPath)
 		}()
@@ -1553,8 +1640,10 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 
 //Advanced 설정
 func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
+	defer Recover() // 복구
+
 	cfg, err := ini.Load(dirBin + `/setting.ini`)
-	errINI(err)
+	ErrINI(err)
 
 	defLang := widget.NewSelect([]string{"English", "Korean"}, func(langOption string) {
 		cfg.Section("system").Key("DEFAULT_LANG").SetValue(langOption)
@@ -1570,7 +1659,7 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 
 	defDownDirEntry := widget.NewEntry()
 
-	defDownDir := widget.NewButtonWithIcon(loadLang("fileExplorer"), theme.FolderOpenIcon(), func() {
+	defDownDir := widget.NewButtonWithIcon(LoadLang("fileExplorer"), theme.FolderOpenIcon(), func() {
 		go func() {
 			selDownDir, err := dlog.Directory().Title(title).Browse()
 			if err == nil {
@@ -1590,24 +1679,24 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 		cfg.Section("encode").Key("ENCODING_TYPE").SetValue(encType)
 	})
 
-	saveSetting := widget.NewButtonWithIcon(loadLang("saveSetting"), theme.DocumentSaveIcon(), func() {
+	saveSetting := widget.NewButtonWithIcon(LoadLang("saveSetting"), theme.DocumentSaveIcon(), func() {
 		err = cfg.SaveTo(dirBin + `/setting.ini`)
 		ErrHandle(err)
 
-		dialog.ShowInformation(title, loadLang("saved"), w2)
+		dialog.ShowInformation(title, LoadLang("saved"), w2)
 	})
 
-	saveSettingExit := widget.NewButtonWithIcon(loadLang("exit"), theme.CancelIcon(), func() {
+	saveSettingExit := widget.NewButtonWithIcon(LoadLang("exit"), theme.CancelIcon(), func() {
 		w2.Close()
 	})
 
-	resetSetting := widget.NewButtonWithIcon(loadLang("resetSetting"), theme.ViewRefreshIcon(), func() {
-		dialog.ShowConfirm(title, loadLang("realResetSetting"), func(b bool) {
+	resetSetting := widget.NewButtonWithIcon(LoadLang("resetSetting"), theme.ViewRefreshIcon(), func() {
+		dialog.ShowConfirm(title, LoadLang("realResetSetting"), func(b bool) {
 			if b {
 				err = os.Remove(dirBin + `/setting.ini`)
 				ErrHandle(err)
 
-				makeINI()
+				MakeINI()
 
 				RunAgain()
 			}
@@ -1626,7 +1715,7 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 	defSelEncType.SetSelected(cfg.Section("encode").Key("ENCODING_TYPE").String())
 
 	defLang.OnChanged = func(s string) {
-		dialog.ShowConfirm(title, loadLang("askRunAgainLang"), func(c bool) {
+		dialog.ShowConfirm(title, LoadLang("askRunAgainLang"), func(c bool) {
 			if c {
 				cfg.Section("system").Key("DEFAULT_LANG").SetValue(s)
 				err = cfg.SaveTo(dirBin + `/setting.ini`)
@@ -1646,15 +1735,15 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 	defSelEncBox := widget.NewHBox(defSelEnc)
 	defSelEncTypeBox := widget.NewHBox(defSelEncType)
 
-	form.Append(loadLang("optionLanguage"), defLangBox)
-	form.Append(loadLang("optionDownload"), defDownOptionBox)
-	form.Append(loadLang("optionMaxConnection"), defMaxConnectionBox)
-	form.Append(loadLang("optionDownloadLocation"), defDownDirBox)
-	form.Append(loadLang("optionEncoding"), defSelEncBox)
-	form.Append(loadLang("optionEncodingType"), defSelEncTypeBox)
+	form.Append(LoadLang("optionLanguage"), defLangBox)
+	form.Append(LoadLang("optionDownload"), defDownOptionBox)
+	form.Append(LoadLang("optionMaxConnection"), defMaxConnectionBox)
+	form.Append(LoadLang("optionDownloadLocation"), defDownDirBox)
+	form.Append(LoadLang("optionEncoding"), defSelEncBox)
+	form.Append(LoadLang("optionEncodingType"), defSelEncTypeBox)
 
 	settingMenu := widget.NewVBox(
-		widget.NewGroup(loadLang("defaultSetting"),
+		widget.NewGroup(LoadLang("defaultSetting"),
 			form,
 			saveSettingLayout,
 		),
@@ -1665,6 +1754,8 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 
 //AddQueue 대기열 추가
 func AddQueue(title, vodid, time, thumb string, prog *widget.ProgressBar, status *widget.Label, progStatus *widget.Entry, cmd *exec.Cmd) {
+	defer Recover() // 복구
+
 	fmt.Println("--- 대기열 추가")
 	fmt.Println("ID: " + vodid)
 	fmt.Println("Title: " + title)
@@ -1695,6 +1786,8 @@ func AddQueue(title, vodid, time, thumb string, prog *widget.ProgressBar, status
 
 //DelQueue 대기열 삭제
 func DelQueue(i int) {
+	defer Recover() // 복구
+
 	// string
 	queueID = queueID[:i+copy(queueID[i:], queueID[i+1:])]
 	queueTitle = queueTitle[:i+copy(queueTitle[i:], queueTitle[i+1:])]
@@ -1716,6 +1809,8 @@ func DelQueue(i int) {
 
 //MoreView 대기열 창
 func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
+	defer Recover() // 복구
+
 	queue := widget.NewGroup("대기열")
 
 	fmt.Println(queueID)
@@ -1737,14 +1832,14 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 			ErrHandle(err)
 
 			var stopButton *widget.Button
-			stopButton = widget.NewButton(loadLang("cancel"), func() {
+			stopButton = widget.NewButton(LoadLang("cancel"), func() {
 				stopProg := dialog.NewProgressInfinite(title, "진행 중지를 기다리는 중...", moreInfoW)
 				stopProg.Show()
 
 				switch queueProgStatus[i].Text {
 				case "wait":
 					stopProg.Hide()
-					dialog.ShowInformation(title, loadLang("stoppedNoStatus"), moreInfoW)
+					dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), moreInfoW)
 				case "download":
 					queueProgStatus[i].SetText("press_stop")
 
@@ -1757,7 +1852,7 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 					}
 
 					stopProg.Hide()
-					dialog.ShowInformation(title, loadLang("stoppedDownload"), moreInfoW)
+					dialog.ShowInformation(title, LoadLang("stoppedDownload"), moreInfoW)
 					notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
 				case "merge":
 					queueProgStatus[i].SetText("press_stop")
@@ -1771,7 +1866,7 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 					}
 
 					stopProg.Hide()
-					dialog.ShowInformation(title, loadLang("stoppedDownload"), moreInfoW)
+					dialog.ShowInformation(title, LoadLang("stoppedDownload"), moreInfoW)
 					notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
 				case "move":
 					queueProgStatus[i].SetText("press_stop")
@@ -1785,14 +1880,14 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 					}
 
 					stopProg.Hide()
-					dialog.ShowInformation(title, loadLang("stoppedDownload"), moreInfoW)
+					dialog.ShowInformation(title, LoadLang("stoppedDownload"), moreInfoW)
 					notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
 				case "encode":
 					stopProg.Hide()
-					dialog.ShowInformation(title, loadLang("stoppedNoStatus"), moreInfoW)
+					dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), moreInfoW)
 				case "wait_incomplete_download":
 					stopProg.Hide()
-					dialog.ShowInformation(title, loadLang("stoppedNoStatus"), moreInfoW)
+					dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), moreInfoW)
 				}
 
 				canvas.Refresh(moreInfoW.Content())
@@ -1808,8 +1903,8 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 			s := queueTimeInt - (3600 * h) - (m * 60)
 
 			moreViewForm := widget.NewVBox(
-				widget.NewLabel(fmt.Sprintf("%s: %s", loadLang("vodTitle"), queueTitle[i])),
-				widget.NewLabel(loadLang("vodTime")+": "+fmt.Sprintf("%d시간 %d분 %d초", h, m, s)),
+				widget.NewLabel(fmt.Sprintf("%s: %s", LoadLang("vodTitle"), queueTitle[i])),
+				widget.NewLabel(LoadLang("vodTime")+": "+fmt.Sprintf("%d시간 %d분 %d초", h, m, s)),
 				widget.NewHBox(queueStatus[i], stopButton),
 			)
 
@@ -1831,7 +1926,7 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 			queue.Append(queueLayout)
 		}
 	} else {
-		queue.Append(widget.NewLabelWithStyle(loadLang("noQueue"), fyne.TextAlignCenter, fyne.TextStyle{Bold: false}))
+		queue.Append(widget.NewLabelWithStyle(LoadLang("noQueue"), fyne.TextAlignCenter, fyne.TextStyle{Bold: false}))
 	}
 
 	return widget.NewScrollContainer(queue)
