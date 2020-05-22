@@ -35,14 +35,6 @@ type TwitchOAuth2 struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-//TwitchUser Twitch Users 구조체
-type TwitchUser struct {
-	DisplayName string `json:"display_name"`
-	ID          string `json:"_id"`
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-}
-
 //counter goroutine Counter 구조체
 type counter struct {
 	i  int

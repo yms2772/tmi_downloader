@@ -20,7 +20,6 @@ import (
 	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
 
-	"github.com/cavaliercoder/grab"
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/nicklaw5/helix"
 	"github.com/tidwall/gjson"
@@ -30,6 +29,8 @@ import (
 )
 
 func main() { // 메인
+	defer Recover() // 복구
+
 	var updateFlag bool
 	flag.BoolVar(&updateFlag, "update", true, "업데이트 확인")
 
@@ -107,7 +108,7 @@ func main() { // 메인
 	err = os.MkdirAll(dirThumb, 0777)
 	ErrHandle(err)
 
-	fmt.Println("언어: " + loadLang("lang"))
+	fmt.Println("언어: " + LoadLang("lang"))
 
 	//w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) { // 키 이벤트
 	//	if k.Name == fyne.KeyQ { // q 눌러서 종료
@@ -137,16 +138,16 @@ func main() { // 메인
 		_, noFFmpeg := os.Stat(dirBin + "/" + ffmpegBinary)
 
 		if os.IsNotExist(noFont) || os.IsNotExist(noFFmpeg) {
-			splWindow.SetContent(SplBox(loadLang("downloadNecessary"), logoImage))
+			splWindow.SetContent(SplBox(LoadLang("downloadNecessary"), logoImage))
 
 			if os.IsNotExist(noFont) {
-				_, err = grab.Get(fontInfo, "https://drive.google.com/uc?export=download&id=1vgGD1E0Zx0EWU6tfA39q-3blRYUxaY2d") // 폰트 다운로드
+				Download(fontInfo, "https://drive.google.com/uc?export=download&id=1vgGD1E0Zx0EWU6tfA39q-3blRYUxaY2d") // 폰트 다운로드
 				ErrHandle(err)
 			}
 
 			if _, err := os.Stat(dirBin + "/" + ffmpegBinary); os.IsNotExist(err) {
-				_, err = grab.Get(dirBin+`/ffmpeg.tar.gz`, ffmpegURL) // ffmpeg 다운로드
-				ErrHandle(err)
+				Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL) // ffmpeg 다운로드
+				//ErrHandle(err)
 
 				r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
 				ErrHandle(err)
@@ -157,16 +158,16 @@ func main() { // 메인
 			}
 
 			if os.IsNotExist(noFont) {
-				splWindow.SetContent(SplBox(loadLang("downloadNecessaryDone"), logoImage))
+				splWindow.SetContent(SplBox(LoadLang("downloadNecessaryDone"), logoImage))
 
 				time.Sleep(5 * time.Second)
 
 				RunAgain()
 			}
-			splWindow.SetContent(SplBox(loadLang("downloadComplete"), logoImage))
+			splWindow.SetContent(SplBox(LoadLang("downloadComplete"), logoImage))
 		}
 
-		splWindow.SetContent(SplBox(loadLang("loadProgram"), logoImage))
+		splWindow.SetContent(SplBox(LoadLang("loadProgram"), logoImage))
 
 		needUpdate, updateNote := CheckUpdate()
 		if !updateFlag {
@@ -235,7 +236,7 @@ func main() { // 메인
 			fmt.Println("Username: offline")
 		} else {
 			if _, err := os.Stat(dirBin + "/twitch.json"); err == nil { // 저장된 토큰이 있으면 -> 자동 로그인
-				splWindow.SetContent(SplBox(loadLang("login"), logoImage))
+				splWindow.SetContent(SplBox(LoadLang("login"), logoImage))
 
 				twitchJSON, err := ioutil.ReadFile(dirBin + "/twitch.json")
 				if err != nil {
@@ -274,7 +275,7 @@ func main() { // 메인
 				twitchAccessToken = refresh.Data.AccessToken
 				twitchRefreshToken = refresh.Data.RefreshToken
 			} else { // 저장된 토큰이 없으면 -> 로그인 요청
-				splWindow.SetContent(SplBox(loadLang("waitLogin"), logoImage))
+				splWindow.SetContent(SplBox(LoadLang("waitLogin"), logoImage))
 
 				if chromeStatus {
 					ui, err := lorca.New("http://localhost:7001/login", "", 400, 600)
@@ -308,18 +309,6 @@ func main() { // 메인
 				}
 			}
 
-			twitchUserData, err := jsonParseTwitchWithToken("https://api.twitch.tv/kraken/user", twitchAccessToken)
-			ErrHandle(err)
-
-			var twitchUser TwitchUser
-			err = json.Unmarshal(twitchUserData, &twitchUser)
-			ErrHandle(err)
-
-			twitchDisplayName = twitchUser.DisplayName
-			twitchUserName = twitchUser.Name
-			twitchUserID = twitchUser.ID
-			twitchUserEmail = twitchUser.Email
-
 			helixClient, err = helix.NewClient(&helix.Options{
 				UserAccessToken: twitchAccessToken,
 				ClientID:        clientID,
@@ -328,6 +317,13 @@ func main() { // 메인
 				RedirectURI:     redirectURL,
 			})
 			ErrHandle(err)
+
+			twitchUserData, _ := helixClient.GetUsers(&helix.UsersParams{})
+
+			twitchDisplayName = twitchUserData.Data.Users[0].DisplayName
+			twitchUserName = twitchUserData.Data.Users[0].Login
+			twitchUserID = twitchUserData.Data.Users[0].ID
+			twitchUserEmail = twitchUserData.Data.Users[0].Email
 
 			fmt.Println("Twitch Access Token: " + twitchAccessToken)
 			fmt.Println("Username: " + twitchDisplayName)
@@ -347,11 +343,11 @@ func main() { // 메인
 		}
 
 		if needUpdate {
-			updateContent := widget.NewGroup(loadLang("foundNewVersion"),
+			updateContent := widget.NewGroup(LoadLang("foundNewVersion"),
 				widget.NewLabel(updateNote),
 			)
 
-			dialog.ShowCustomConfirm(title, loadLang("ok"), "", updateContent, func(c bool) {
+			dialog.ShowCustomConfirm(title, LoadLang("ok"), "", updateContent, func(c bool) {
 				if c {
 					OpenURL("https://notice.tmi.tips/TDownloader/exeGuide")
 				}
@@ -360,8 +356,8 @@ func main() { // 메인
 			}, w)
 		}
 
-		w.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu(loadLang("menuInfo"),
-			fyne.NewMenuItem(loadLang("menuInNotice"), func() {
+		w.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu(LoadLang("menuInfo"),
+			fyne.NewMenuItem(LoadLang("menuInNotice"), func() {
 				go func() {
 					if chromeStatus {
 						ui, err := lorca.New("https://notice.tmi.tips/TDownloader/", "", 800, 600)
@@ -374,7 +370,7 @@ func main() { // 메인
 					}
 				}()
 			}),
-			fyne.NewMenuItem(loadLang("menuInLicense"), func() {
+			fyne.NewMenuItem(LoadLang("menuInLicense"), func() {
 				go func() {
 					if chromeStatus {
 						ui, err := lorca.New("https://notice.tmi.tips/License/", "", 800, 600)
@@ -387,14 +383,14 @@ func main() { // 메인
 					}
 				}()
 			}),
-		), fyne.NewMenu(loadLang("menuMore"),
-			fyne.NewMenuItem(loadLang("installRequireFile"), func() {
+		), fyne.NewMenu(LoadLang("menuMore"),
+			fyne.NewMenuItem(LoadLang("installRequireFile"), func() {
 				go func() {
-					prog := dialog.NewProgress(title, loadLang("downloadNecessary"), w)
+					prog := dialog.NewProgress(title, LoadLang("downloadNecessary"), w)
 					prog.SetValue(0.5)
 					prog.Show()
 
-					_, err = grab.Get(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
+					Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
 					ErrHandle(err)
 
 					r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
@@ -405,12 +401,12 @@ func main() { // 메인
 					ErrHandle(err)
 
 					prog.SetValue(1)
-					dialog.ShowInformation(title, loadLang("downloadNecessaryDone"), w)
+					dialog.ShowInformation(title, LoadLang("downloadNecessaryDone"), w)
 				}()
 			}),
-			fyne.NewMenuItem(loadLang("tabSetting"), func() {
+			fyne.NewMenuItem(LoadLang("tabSetting"), func() {
 				go func() {
-					showSettingDiag := dialog.NewProgressInfinite(title, loadLang("editSettingNow"), w)
+					showSettingDiag := dialog.NewProgressInfinite(title, LoadLang("editSettingNow"), w)
 					showSettingDiag.Show()
 
 					w2 := fyne.CurrentApp().NewWindow(title)
@@ -429,8 +425,8 @@ func main() { // 메인
 					w2.Show()
 				}()
 			})),
-			fyne.NewMenu(twitchDisplayName+loadLang("hello"),
-				fyne.NewMenuItem(loadLang("logout"), func() {
+			fyne.NewMenu(twitchDisplayName+LoadLang("hello"),
+				fyne.NewMenuItem(LoadLang("logout"), func() {
 					err = os.Remove(dirBin + "/twitch.json")
 					ErrHandle(err)
 
