@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"os/exec"
 
 	"fyne.io/fyne"
@@ -22,19 +23,21 @@ const ( // API
 )
 
 var ( // Main 변수
-	version        = "20200523"
+	version        = "20200529"
 	title          = "TMI Downloader"
 	dirTemp        = VarOS("dirTemp")
 	dirBin         = VarOS("dirBin")
 	dirWebFonts    = VarOS("dirWebFonts")
 	dirDefDown     = VarOS("dirDefDown")
 	dirThumb       = dirTemp + "/thumb"
-	fontInfo       = dirWebFonts + "/AppleSDGothicNeoM.ttf"
+	fontInfo       = dirWebFonts + "/AppleSDGothicNeoB.ttf"
 	ffmpegURL      = VarOS("ffmpegURL")
 	ffmpegBinary   = VarOS("ffmpegBinary")
 	lang           = SetLang()
 	chromeStatus   = CheckChrome()
 	checkClipboard bool
+	programUUID    string
+	debugFileName  string
 	err            error
 )
 
@@ -67,6 +70,7 @@ var ( // Twitch OAuth2 Info
 )
 
 var ( // Function 변수
+	debugLog                                             *os.File
 	helixClient                                          *helix.Client
 	button                                               *widget.Button
 	intervalCheck, intervalStartCheck, intervalStopCheck *widget.Check

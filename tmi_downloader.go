@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"fyne.io/fyne"
@@ -20,6 +21,7 @@ import (
 	"fyne.io/fyne/widget"
 
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
+	"github.com/gofrs/uuid"
 	"github.com/nicklaw5/helix"
 	"github.com/tidwall/gjson"
 	"github.com/zserge/lorca"
@@ -28,17 +30,67 @@ import (
 )
 
 func main() { // 메인
+	uuid1, err := uuid.NewV4()
+	ErrHandle(err)
+
+	programUUID = uuid1.String()
+	debugFileName = fmt.Sprintf("%s/debug_%s.txt", dirBin, programUUID)
+
+	debugFiles, err := filepath.Glob(dirBin + "/debug_*")
+	ErrHandle(err)
+
+	for _, debugFile := range debugFiles {
+		err := os.Remove(debugFile)
+		ErrHandle(err)
+	}
+
+	ioutil.WriteFile(debugFileName, []byte(fmt.Sprintf(fmt.Sprintf("===== %s 시작\n실행 UUID: %s\n\n", time.Now().Format("2006-01-02 15:04:05"), programUUID))), 0644)
+
 	defer Recover() // 복구
 
-	var updateFlag bool
+	var updateFlag, resetFlag bool
+	var loginFlag string
+
 	flag.BoolVar(&updateFlag, "update", true, "업데이트 확인")
+	flag.BoolVar(&resetFlag, "reset", false, "초기화")
+
+	flag.StringVar(&loginFlag, "login", "online", "로그인 모드")
+	//flag.BoolVar(&debugFlag, "debug", false, "디버그 모드")
 
 	flag.Parse()
+
+	if resetFlag {
+		resetFiles, err := filepath.Glob(dirBin + "/*")
+		ErrHandle(err)
+
+		for _, resetFile := range resetFiles {
+			err := os.Remove(resetFile)
+			ErrHandle(err)
+		}
+
+		RunAgain()
+	}
+
+	if loginFlag == "logout" {
+		err = os.Remove(dirBin + "/twitch.json")
+		ErrHandle(err)
+
+		RunAgain()
+	}
+
+	//if !debugFlag {
+	//	HideConsole()
+	//}
+
+	debugLog, err = os.OpenFile(debugFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	ErrHandle(err)
+	defer debugLog.Close()
 
 	if _, err := os.Stat(fontInfo); err == nil {
 		if CryptoSHA256(fontInfo) != "a652ea0a3c4bf8658845f044b5d6f40c39ecf03207e43f325c1451127528402b" {
 			err := os.Remove(fontInfo)
 			ErrHandle(err)
+
 			RunAgain()
 		}
 
@@ -71,11 +123,12 @@ func main() { // 메인
 	a.SetIcon(appInfo.icon)
 	a.Settings().SetTheme(NewCustomTheme(theme.TextFont()))
 
-	drv := fyne.CurrentApp().Driver().(desktop.Driver)
+	drv := a.Driver().(desktop.Driver)
 
 	splWindow = drv.CreateSplashWindow()
 	splWindow.SetTitle(title)
 	splWindow.Resize(fyne.NewSize(300, 200))
+	splWindow.SetFixedSize(true)
 	splWindow.CenterOnScreen()
 
 	w = a.NewWindow(title)
@@ -83,10 +136,7 @@ func main() { // 메인
 	w.SetFixedSize(true)
 	w.SetIcon(appInfo.icon)
 
-	loginMode := flag.String("login", "online", "Login")
-	flag.Parse()
-
-	if *loginMode == "offline" {
+	if loginFlag == "offline" {
 		title = "TMI Downloader Offline Mode"
 	}
 
@@ -212,14 +262,18 @@ func main() { // 메인
 			http.Handle(path, errorHandling(middleware(handler)))
 		}
 
+		// OAuth 핸들러
 		handleFunc("/", HandleRoot)
 		handleFunc("/login", HandleLogin)
 		handleFunc("/redirect", HandleOAuth2Callback)
 
+		// 에러 핸들러
+		handleFunc("/error", ErrorHandle)
+
 		fmt.Println("Started running on http://localhost:7001")
 		go http.ListenAndServe(":7001", nil)
 
-		if *loginMode == "offline" { // 오프라인
+		if loginFlag == "offline" { // 오프라인
 			splWindow.SetContent(SplBox("Login by offline mode", logoImage))
 			twitchDisplayName = "offline"
 
@@ -373,49 +427,48 @@ func main() { // 메인
 						OpenURL("https://notice.tmi.tips/License/")
 					}
 				}()
-			}),
-		), fyne.NewMenu(LoadLang("menuMore"),
-			fyne.NewMenuItem(LoadLang("installRequireFile"), func() {
-				go func() {
-					prog := dialog.NewProgress(title, LoadLang("downloadNecessary"), w)
-					prog.SetValue(0.5)
-					prog.Show()
-
-					Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
-					ErrHandle(err)
-
-					r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
-					ErrHandle(err)
-					defer r.Close()
-
-					err = Untar(dirBin, r)
-					ErrHandle(err)
-
-					prog.SetValue(1)
-					dialog.ShowInformation(title, LoadLang("downloadNecessaryDone"), w)
-				}()
-			}),
-			fyne.NewMenuItem(LoadLang("tabSetting"), func() {
-				go func() {
-					showSettingDiag := dialog.NewProgressInfinite(title, LoadLang("editSettingNow"), w)
-					showSettingDiag.Show()
-
-					w2 := fyne.CurrentApp().NewWindow(title)
-
-					w2.SetOnClosed(func() {
-						showSettingDiag.Hide()
-					})
-
-					object, _ := Advanced(w2)
-
-					w2.SetContent(object)
-					w2.Resize(fyne.NewSize(390, 210))
-					w2.SetIcon(theme.SettingsIcon())
-					w2.SetFixedSize(true)
-					w2.CenterOnScreen()
-					w2.Show()
-				}()
 			})),
+			fyne.NewMenu(LoadLang("menuMore"),
+				fyne.NewMenuItem(LoadLang("installRequireFile"), func() {
+					go func() {
+						prog := dialog.NewProgress(title, LoadLang("downloadNecessary"), w)
+						prog.SetValue(0.5)
+						prog.Show()
+
+						Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
+						ErrHandle(err)
+
+						r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
+						ErrHandle(err)
+						defer r.Close()
+
+						err = Untar(dirBin, r)
+						ErrHandle(err)
+
+						prog.SetValue(1)
+						dialog.ShowInformation(title, LoadLang("downloadNecessaryDone"), w)
+					}()
+				}),
+				fyne.NewMenuItem(LoadLang("tabSetting"), func() {
+					go func() {
+						showSettingDiag := dialog.NewProgressInfinite(title, LoadLang("editSettingNow"), w)
+						showSettingDiag.Show()
+
+						w2 := a.NewWindow(title)
+
+						w2.SetOnClosed(func() {
+							showSettingDiag.Hide()
+						})
+
+						object, _ := Advanced(w2)
+
+						w2.SetContent(object)
+						w2.Resize(fyne.NewSize(430, 280))
+						w2.SetFixedSize(true)
+						w2.CenterOnScreen()
+						w2.Show()
+					}()
+				})),
 			fyne.NewMenu(twitchDisplayName+LoadLang("hello"),
 				fyne.NewMenuItem(LoadLang("logout"), func() {
 					err = os.Remove(dirBin + "/twitch.json")

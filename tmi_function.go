@@ -135,10 +135,18 @@ func WriteBase64(dst, code string) {
 
 //Recover 복구
 func Recover() {
+	nowTime := time.Now().Format("2006-01-02 15:04:05")
+
+	debugLog.WriteString(fmt.Sprintf("---------- %s\n", nowTime))
+
 	if r := recover(); r != nil {
-		fmt.Println("복구됨", r)
+		debugLog.WriteString(fmt.Sprintf("[알림] 복구됨\n"))
+
+		fmt.Println("Recovered")
 		debug.PrintStack()
 	}
+
+	debugLog.WriteString(fmt.Sprintf("[알림] Pass\n%s\n", string(debug.Stack())))
 
 	fmt.Println("Pass")
 }
@@ -171,6 +179,7 @@ func ErrHandle(e error) {
 		}
 
 		msgToSend := fmt.Sprintf("----- 유저 정보\n"+
+			"+ 실행 UUID: *%s*\n"+
 			"+ 시간: *%s*\n"+
 			"+ 운영 체제: *%s*\n"+
 			"+ 접수자: [%s (%s)](https://www.twitch.tv/%s)\n"+
@@ -182,6 +191,7 @@ func ErrHandle(e error) {
 			"```\n"+
 			"%s\n"+
 			"```",
+			programUUID,
 			time.Now().Format("2006-01-02 15:04:05"),
 			runtime.GOOS,
 			twitchDisplayName,
@@ -205,7 +215,10 @@ func ErrHandle(e error) {
 		msg.ParseMode = "Markdown"
 		msg.DisableWebPagePreview = true
 
+		msgFile := tgbot.NewDocumentUpload(-1001175449027, debugFileName)
+
 		_, err = bot.Send(msg)
+		_, err = bot.Send(msgFile)
 		if err == nil {
 			notify.Alert(title, "Notice", fmt.Sprintf("The error log has been sent.\nWe will fix it as soon as possible."), dirBin+"/logo.png")
 		} else {
@@ -287,9 +300,9 @@ func VarOS(s string) string {
 	case "dirWebFonts":
 		switch runtime.GOOS {
 		case "windows":
-			return os.Getenv("PUBLIC") + `/Documents/tmi_tips/dirWebFonts`
+			return os.Getenv("PUBLIC") + `/Documents/tmi_tips/webfonts`
 		case "darwin":
-			return os.Getenv("HOME") + `/tmi_tips/dirWebFonts`
+			return os.Getenv("HOME") + `/tmi_tips/webfonts`
 		}
 	case "dirDefDown":
 		switch runtime.GOOS {
@@ -429,6 +442,16 @@ func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) (err error) {
 	twitchRefreshToken = token.RefreshToken
 
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+
+	return
+}
+
+//ErrorHandle 에러 안내 페이지 핸들러
+func ErrorHandle(_ http.ResponseWriter, _ *http.Request) (err error) {
+	defer Recover() // 복구
+
+	//w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	//w.Write([]byte(``))
 
 	return
 }
@@ -1672,11 +1695,11 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 	})
 
 	queueButton := widget.NewButtonWithIcon("", theme.MailSendIcon(), func() {
-		moreInfoW := fyne.CurrentApp().NewWindow(title)
+		moreInfoW := a.NewWindow(title)
 
 		moreInfoW.SetContent(MoreView(moreInfoW))
 		moreInfoW.Resize(fyne.NewSize(500, 400))
-		moreInfoW.SetIcon(theme.MoveDownIcon())
+		moreInfoW.SetFixedSize(true)
 		moreInfoW.CenterOnScreen()
 		moreInfoW.Show()
 	})
@@ -1715,9 +1738,8 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 	cfg, err := ini.Load(dirBin + `/setting.ini`)
 	ErrINI(err)
 
-	defLang := widget.NewSelect([]string{"English", "Korean"}, func(langOption string) {
-		cfg.Section("system").Key("DEFAULT_LANG").SetValue(langOption)
-	})
+	//defLang := widget.NewSelect([]string{"English", "Korean"}, func(langOption string) {})
+	defLang := widget.NewRadio([]string{"English", "Korean"}, func(langOption string) {})
 
 	downOption := widget.NewSelect([]string{"Multi", "Single"}, func(c string) {
 		cfg.Section("main").Key("DOWNLOAD_OPTION").SetValue(c)
@@ -1761,6 +1783,8 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 	})
 
 	resetSetting := widget.NewButtonWithIcon(LoadLang("resetSetting"), theme.ViewRefreshIcon(), func() {
+		fmt.Println("Reset")
+
 		dialog.ShowConfirm(title, LoadLang("realResetSetting"), func(b bool) {
 			if b {
 				err = os.Remove(dirBin + `/setting.ini`)
@@ -1785,9 +1809,12 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 	defSelEncType.SetSelected(cfg.Section("encode").Key("ENCODING_TYPE").String())
 
 	defLang.OnChanged = func(s string) {
+		fmt.Println(s)
+
 		dialog.ShowConfirm(title, LoadLang("askRunAgainLang"), func(c bool) {
 			if c {
 				cfg.Section("system").Key("DEFAULT_LANG").SetValue(s)
+
 				err = cfg.SaveTo(dirBin + `/setting.ini`)
 				ErrHandle(err)
 
@@ -1817,6 +1844,8 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 			form,
 			saveSettingLayout,
 		),
+		//form,
+		//saveSettingLayout,
 	)
 
 	return settingMenu, cfg
