@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/gob"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -17,13 +16,11 @@ import (
 	"fyne.io/fyne/canvas"
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/driver/desktop"
-	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
 
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/gofrs/uuid"
 	"github.com/nicklaw5/helix"
-	"github.com/tidwall/gjson"
 	"github.com/zserge/lorca"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/twitch"
@@ -55,7 +52,6 @@ func main() { // 메인
 	flag.BoolVar(&resetFlag, "reset", false, "초기화")
 
 	flag.StringVar(&loginFlag, "login", "online", "로그인 모드")
-	//flag.BoolVar(&debugFlag, "debug", false, "디버그 모드")
 
 	flag.Parse()
 
@@ -72,56 +68,34 @@ func main() { // 메인
 	}
 
 	if loginFlag == "logout" {
-		err = os.Remove(dirBin + "/twitch.json")
-		ErrHandle(err)
+		a.Preferences().RemoveValue("twitchRefreshToken")
 
 		RunAgain()
 	}
-
-	//if !debugFlag {
-	//	HideConsole()
-	//}
 
 	debugLog, err = os.OpenFile(debugFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	ErrHandle(err)
 	defer debugLog.Close()
 
-	if _, err := os.Stat(fontInfo); err == nil {
-		if CryptoSHA256(fontInfo) != "a652ea0a3c4bf8658845f044b5d6f40c39ecf03207e43f325c1451127528402b" {
-			err := os.Remove(fontInfo)
-			ErrHandle(err)
-
-			RunAgain()
-		}
-
-		err = os.Setenv("FYNE_FONT", fontInfo)
-		ErrHandle(err)
-	}
-
-	if _, err := os.Stat(dirBin + "/logo.png"); os.IsNotExist(err) {
-		WriteBase64(dirBin+"/logo.png", logoBase64)
-	}
-
 	logoImage := &canvas.Image{
-		File:     dirBin + "/logo.png",
+		Resource: logo,
 		FillMode: canvas.ImageFillOriginal,
 	}
 	canvas.Refresh(logoImage)
 	logoImage.Resize(fyne.NewSize(50, 50))
 
-	a = app.New()
+	a = app.NewWithID("tmi.tips.dl")
+
+	lang = a.Preferences().StringWithFallback("language", "Korean")
 
 	appInfo := &appInfo{
 		name: "TMI Downloader",
 	}
 
-	icon, err := fyne.LoadResourceFromPath(dirBin + "/logo.png")
-	ErrHandle(err)
-
-	appInfo.icon = icon
+	appInfo.icon = logo
 
 	a.SetIcon(appInfo.icon)
-	a.Settings().SetTheme(NewCustomTheme(theme.TextFont()))
+	a.Settings().SetTheme(NewCustomTheme())
 
 	drv := a.Driver().(desktop.Driver)
 
@@ -175,20 +149,13 @@ func main() { // 메인
 	w.SetContent(DownloadHome(w))
 
 	go func() {
-		_, noFont := os.Stat(fontInfo)
 		_, noFFmpeg := os.Stat(dirBin + "/" + ffmpegBinary)
 
-		if os.IsNotExist(noFont) || os.IsNotExist(noFFmpeg) {
+		if os.IsNotExist(noFFmpeg) {
 			splWindow.SetContent(SplBox(LoadLang("downloadNecessary"), logoImage))
-
-			if os.IsNotExist(noFont) {
-				Download(fontInfo, "https://drive.google.com/uc?export=download&id=1vgGD1E0Zx0EWU6tfA39q-3blRYUxaY2d") // 폰트 다운로드
-				ErrHandle(err)
-			}
 
 			if _, err := os.Stat(dirBin + "/" + ffmpegBinary); os.IsNotExist(err) {
 				Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL) // ffmpeg 다운로드
-				//ErrHandle(err)
 
 				r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
 				ErrHandle(err)
@@ -198,13 +165,6 @@ func main() { // 메인
 				ErrHandle(err)
 			}
 
-			if os.IsNotExist(noFont) {
-				splWindow.SetContent(SplBox(LoadLang("downloadNecessaryDone"), logoImage))
-
-				time.Sleep(5 * time.Second)
-
-				RunAgain()
-			}
 			splWindow.SetContent(SplBox(LoadLang("downloadComplete"), logoImage))
 		}
 
@@ -268,7 +228,7 @@ func main() { // 메인
 		handleFunc("/redirect", HandleOAuth2Callback)
 
 		// 에러 핸들러
-		handleFunc("/error", ErrorHandle)
+		handleFunc("/errorNoAlert", ErrorHandle)
 
 		fmt.Println("Started running on http://localhost:7001")
 		go http.ListenAndServe(":7001", nil)
@@ -280,24 +240,8 @@ func main() { // 메인
 			fmt.Println("Offline login")
 			fmt.Println("Username: offline")
 		} else {
-			if _, err := os.Stat(dirBin + "/twitch.json"); err == nil { // 저장된 토큰이 있으면 -> 자동 로그인
+			if len(a.Preferences().String("twitchRefreshToken")) != 0 { // 저장된 토큰이 있으면 -> 자동 로그인
 				splWindow.SetContent(SplBox(LoadLang("login"), logoImage))
-
-				twitchJSON, err := ioutil.ReadFile(dirBin + "/twitch.json")
-				if err != nil {
-					err = os.Remove(dirBin + "/twitch.json")
-					ErrHandle(err)
-
-					RunAgain()
-				}
-
-				_, isJSON := gjson.Parse(string(twitchJSON)).Value().(map[string]interface{})
-				if !isJSON {
-					err = os.Remove(dirBin + "/twitch.json")
-					ErrHandle(err)
-
-					RunAgain()
-				}
 
 				helixClient, err = helix.NewClient(&helix.Options{
 					ClientID:     clientID,
@@ -307,11 +251,9 @@ func main() { // 메인
 				})
 				ErrHandle(err)
 
-				twitchJSONGet := gjson.Get(string(twitchJSON), "refresh_token")
-
-				refresh, err := helixClient.RefreshUserAccessToken(twitchJSONGet.String())
+				refresh, err := helixClient.RefreshUserAccessToken(a.Preferences().String("twitchRefreshToken"))
 				if err != nil {
-					err = os.Remove(dirBin + "/twitch.json")
+					a.Preferences().RemoveValue("twitchRefreshToken")
 					ErrHandle(err)
 
 					RunAgain()
@@ -373,18 +315,9 @@ func main() { // 메인
 			fmt.Println("Twitch Access Token: " + twitchAccessToken)
 			fmt.Println("Username: " + twitchDisplayName)
 
-			fmt.Println("Saving: twitch.json") // twitch.json 저장
-			twitchOAuth2JSON := TwitchOAuth2{
-				RefreshToken: twitchRefreshToken,
-			}
+			fmt.Println("Saving twitchRefreshToken...")
 
-			file, err := json.MarshalIndent(twitchOAuth2JSON, "", " ")
-			ErrHandle(err)
-
-			err = ioutil.WriteFile(dirBin+"/twitch.json", file, 0777)
-			ErrHandle(err)
-
-			fmt.Println(string(file))
+			a.Preferences().SetString("twitchRefreshToken", twitchRefreshToken)
 		}
 
 		if needUpdate {
@@ -445,8 +378,9 @@ func main() { // 메인
 						err = Untar(dirBin, r)
 						ErrHandle(err)
 
-						prog.SetValue(1)
-						dialog.ShowInformation(title, LoadLang("downloadNecessaryDone"), w)
+						prog.Hide()
+
+						dialog.ShowInformation(title, LoadLang("downloadComplete"), w)
 					}()
 				}),
 				fyne.NewMenuItem(LoadLang("tabSetting"), func() {
@@ -460,10 +394,10 @@ func main() { // 메인
 							showSettingDiag.Hide()
 						})
 
-						object, _ := Advanced(w2)
+						object := Advanced(w2)
 
 						w2.SetContent(object)
-						w2.Resize(fyne.NewSize(430, 280))
+						w2.Resize(fyne.NewSize(430, 350))
 						w2.SetFixedSize(true)
 						w2.CenterOnScreen()
 						w2.Show()
@@ -471,8 +405,7 @@ func main() { // 메인
 				})),
 			fyne.NewMenu(twitchDisplayName+LoadLang("hello"),
 				fyne.NewMenuItem(LoadLang("logout"), func() {
-					err = os.Remove(dirBin + "/twitch.json")
-					ErrHandle(err)
+					a.Preferences().RemoveValue("twitchRefreshToken")
 
 					RunAgain()
 				}),

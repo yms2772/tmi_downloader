@@ -44,6 +44,7 @@ var ( // 언어 변수
 		"optionDownloadLocation": "Download Location",
 		"optionEncoding": "Encoding",
 		"optionEncodingType": "Encoding Type",
+		"optionErrorHandle": "Display Error",
 		"defaultSetting": "Default Setting",
 		"downloadNecessary": "Downloading necessary file... This may take a long time.",
 		"downloadNecessaryDone": "Program will restart after 5 seconds.",
@@ -94,7 +95,8 @@ var ( // 언어 변수
 		"stoppedDownload": "Progress has been canceled.",
 		"stoppedNoStatus": "Can't' check the progress.",
 		"canceled": "Canceled",
-		"noFreeSpace": "Less than 10% of space left."
+		"noFreeSpace": "Less than 10% of space left.",
+		"errorHandleNoAlert": "Error page is disabled."
 	}`
 
 	// 한국어
@@ -140,6 +142,7 @@ var ( // 언어 변수
 		"optionDownloadLocation": "다운로드 위치",
 		"optionEncoding": "인코딩",
 		"optionEncodingType": "인코딩 형식",
+		"optionErrorHandle": "오류 표시",
 		"defaultSetting": "기본 설정",
 		"downloadNecessary": "필요한 파일 다운로드 중... 시간이 오래 걸릴 수 있습니다.",
 		"downloadNecessaryDone": "프로그램이 5초 후 재시작 됩니다.",
@@ -190,6 +193,7 @@ var ( // 언어 변수
 		"stoppedDownload": "진행이 취소되었습니다.",
 		"stoppedNoStatus": "상태를 알 수 없습니다.",
 		"canceled": "취소됨",
-		"noFreeSpace": "남은 공간이 10% 미만입니다."
+		"noFreeSpace": "남은 공간이 10% 미만입니다.",
+		"errorHandleNoAlert": "에러 페이지가 비활성화 되었습니다."
 	}`
 )

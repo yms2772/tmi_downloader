@@ -8,8 +8,6 @@ import (
 )
 
 var (
-	defFont fyne.Resource
-
 	dark     = &color.RGBA{R: 38, G: 38, B: 40, A: 255}
 	orange   = &color.RGBA{R: 198, G: 123, B: 0, A: 255}
 	grey     = &color.Gray{Y: 123}
@@ -97,22 +95,22 @@ func (customTheme) TextSize() int {
 
 //TextFont 폰트
 func (customTheme) TextFont() fyne.Resource {
-	return defFont
+	return webfont
 }
 
 //TextBoldFont 볼드 폰트
 func (customTheme) TextBoldFont() fyne.Resource {
-	return defFont
+	return webfont
 }
 
 //TextItalicFont 이탈릭 폰트
 func (customTheme) TextItalicFont() fyne.Resource {
-	return defFont
+	return webfont
 }
 
 //TextBoldItalicFont 볼드 이탈릭 폰트
 func (customTheme) TextBoldItalicFont() fyne.Resource {
-	return defFont
+	return webfont
 }
 
 //TextMonospaceFont 모노스페이스 폰트
@@ -141,7 +139,6 @@ func (customTheme) ScrollBarSmallSize() int {
 }
 
 // NewCustomTheme 커스텀 테마
-func NewCustomTheme(font fyne.Resource) fyne.Theme {
-	defFont = font
+func NewCustomTheme() fyne.Theme {
 	return &customTheme{}
 }

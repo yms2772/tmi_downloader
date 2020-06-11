@@ -30,10 +30,9 @@ var ( // Main 변수
 	dirWebFonts    = VarOS("dirWebFonts")
 	dirDefDown     = VarOS("dirDefDown")
 	dirThumb       = dirTemp + "/thumb"
-	fontInfo       = dirWebFonts + "/AppleSDGothicNeoB.ttf"
 	ffmpegURL      = VarOS("ffmpegURL")
 	ffmpegBinary   = VarOS("ffmpegBinary")
-	lang           = SetLang()
+	lang           string
 	chromeStatus   = CheckChrome()
 	checkClipboard bool
 	programUUID    string

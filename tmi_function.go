@@ -3,11 +3,10 @@ package main
 import (
 	"archive/tar"
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -43,8 +42,6 @@ import (
 	dlog "github.com/sqweek/dialog"
 	"github.com/tidwall/gjson"
 	"github.com/zserge/lorca"
-
-	"gopkg.in/ini.v1"
 )
 
 //CheckChrome Chrome 체크
@@ -115,21 +112,11 @@ func SplBox(s string, l fyne.CanvasObject) fyne.CanvasObject {
 	return sqlBox
 }
 
-//WriteBase64 Base64에서 파일
-func WriteBase64(dst, code string) {
+//WriteResource 번들 리소스 쓰기
+func WriteResource(file string, resource fyne.Resource) {
 	defer Recover() // 복구
 
-	dec, err := base64.StdEncoding.DecodeString(code)
-	ErrHandle(err)
-
-	f, err := os.Create(dst)
-	ErrHandle(err)
-	defer f.Close()
-
-	_, err = f.Write(dec)
-	ErrHandle(err)
-
-	err = f.Sync()
+	err := ioutil.WriteFile(file, resource.Content(), 0644)
 	ErrHandle(err)
 }
 
@@ -154,6 +141,12 @@ func Recover() {
 //ErrHandle 에러 핸들링
 func ErrHandle(e error) {
 	defer Recover() // 복구
+
+	errorHandleStatusPre := a.Preferences().StringWithFallback("errorHandle", "true")
+	errorHandleStatus, err := strconv.ParseBool(errorHandleStatusPre)
+	if err != nil {
+		errorHandleStatus = true
+	}
 
 	if e != nil {
 		_, file, line, _ := runtime.Caller(1)
@@ -219,17 +212,19 @@ func ErrHandle(e error) {
 
 		_, err = bot.Send(msg)
 		_, err = bot.Send(msgFile)
-		if err == nil {
-			notify.Alert(title, "Notice", fmt.Sprintf("The error log has been sent.\nWe will fix it as soon as possible."), dirBin+"/logo.png")
-		} else {
-			notify.Alert(title, "Notice", fmt.Sprintf("The error log has not been sent.\nPlease contact at support@tmi.tips."), dirBin+"/logo.png")
-		}
 
-		WriteBase64(dirBin+"/bootstrap.css", bootstrapCSSBase64)
-		WriteBase64(dirBin+"/main.css", mainCSSBase64)
-		WriteBase64(dirBin+"/main.js", mainJSBase64)
+		if errorHandleStatus {
+			if err == nil {
+				notify.Alert(title, "Notice", fmt.Sprintf("The error log has been sent.\nWe will fix it as soon as possible."), dirBin+"/logo.png")
+			} else {
+				notify.Alert(title, "Notice", fmt.Sprintf("The error log has not been sent.\nPlease contact at support@tmi.tips."), dirBin+"/logo.png")
+			}
 
-		errHTML := []byte(`
+			WriteResource(dirBin+"/bootstrap.css", bootstrapCSS)
+			WriteResource(dirBin+"/main.css", mainCSS)
+			WriteResource(dirBin+"/main.js", mainJS)
+
+			errHTML := []byte(`
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -240,6 +235,18 @@ func ErrHandle(e error) {
     <link rel="stylesheet" type="text/css" href="file:///` + dirBin + `/main.css">
     <script src="https://code.jquery.com/jquery-latest.min.js"></script>
     <script src="file:///` + dirBin + `/main.js"></script>
+	<script>
+		function submit_form() {
+			alert("페이지가 비활성화 되었습니다");
+
+			$.ajax({
+                url	: "http://localhost:7001/errorNoAlert",
+                type	: "POST",
+                async	: true,
+				data    : "type=no_alert"
+            });
+		}
+	</script>
 <body>
     <div class="jumbotron">
     <h1>에러 로그</h1>
@@ -265,14 +272,23 @@ func ErrHandle(e error) {
         <summary>server returned 403 Forbidden 오류</summary>
         <p>VOD가 손상되었거나 프로그램이 불러올 수 없습니다. 해당 VOD 정보와 함께 문의해주세요.</p>
     </details>
+	<details>
+		<summary>exit status 1 오류</summary>
+		<p>VOD가 다시보기가 아닌 업로드 영상일 수 있습니다. 업로드 영상 다운로드는 곧 지원될 예정입니다.</p>
+	</details>
+		<br>
+        <form method="post" name="fm">
+            <font size=2> * 이 페이지를 다시 보기를 원치 않으시면 <input type="submit" onclick='submit_form()' value="여기">를 눌러주세요.</font>
+        </form>
     </div>
 </body>
 </html>
 `)
 
-		ioutil.WriteFile(dirTemp+"/error.html", errHTML, 0644)
+			ioutil.WriteFile(dirTemp+"/error.html", errHTML, 0644)
 
-		OpenURL(dirTemp + "/error.html")
+			OpenURL(dirTemp + "/error.html")
+		}
 
 		panic(e)
 	}
@@ -447,11 +463,17 @@ func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) (err error) {
 }
 
 //ErrorHandle 에러 안내 페이지 핸들러
-func ErrorHandle(_ http.ResponseWriter, _ *http.Request) (err error) {
+func ErrorHandle(_ http.ResponseWriter, r *http.Request) (err error) {
 	defer Recover() // 복구
 
-	//w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	//w.Write([]byte(``))
+	callType := r.FormValue("type")
+
+	switch callType {
+	case "no_alert":
+		a.Preferences().SetString("errorHandle", "false")
+
+		dialog.ShowInformation(title, LoadLang("errorHandleNoAlert"), w)
+	}
 
 	return
 }
@@ -478,24 +500,6 @@ func AnnotateError(err error, annotation string) error {
 		return nil
 	}
 	return HumanReadableWrapper{ToHuman: annotation, error: err}
-}
-
-//CryptoSHA256 SHA-256 암호화
-func CryptoSHA256(file string) string {
-	defer Recover() // 복구
-
-	f, err := os.Open(file)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		log.Fatal(err)
-	}
-
-	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 //GetDiskUsage 디스크 사용량
@@ -562,14 +566,18 @@ func Download(filepath string, url string) {
 
 	out, err := os.Create(filepath)
 	ErrHandle(err)
-	defer out.Close()
 
 	resp, err := http.Get(url)
-	ErrHandle(err)
-	defer resp.Body.Close()
+	if err != nil {
+		_, err = io.Copy(out, bytes.NewReader(noThumbnail.Content()))
+		ErrHandle(err)
+	} else {
+		_, err = io.Copy(out, resp.Body)
+		ErrHandle(err)
+	}
 
-	_, err = io.Copy(out, resp.Body)
-	ErrHandle(err)
+	_ = resp.Body.Close()
+	out.Close()
 }
 
 //DownloadFile Twitch ts파일 다운로드
@@ -634,34 +642,21 @@ func ClearDir(dir string) { // 폴더 내 모든 파일 삭제
 func TsFinder(token string) (int, error) {
 	defer Recover() // 복구
 
-	resp, err := http.Get("http://vod-secure.twitch.tv/" + token + "/chunked/index-dvr.m3u8")
+	resp, err := http.Get("https://vod-secure.twitch.tv/" + token + "/chunked/index-dvr.m3u8")
 	if err != nil {
 		return 0, err
 	}
-
-	defer resp.Body.Close()
 
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return 0, err
 	}
 
+	resp.Body.Close()
+
 	ts := strings.Count(string(data), ".ts")
 
 	return ts, nil
-}
-
-//MakeINI setting.ini 생성
-func MakeINI() {
-	defer Recover() // 복구
-
-	iniFile, err := os.OpenFile(dirBin+`/setting.ini`, os.O_CREATE|os.O_RDWR, os.FileMode(0644))
-	ErrHandle(err)
-
-	_, err = fmt.Fprintf(iniFile, "; 아래 내용은 본 프로그램에 대해 충분히 숙지 후 수정하시기 바랍니다.\n; 지원하는 포맷 : mp4, mkv, avi, flv, wmv, ts, mov, 3gp\n\n[system]\nTHEME = Dark\nDEFAULT_LANG = English\n\n[main]\nMAX_CONNECTION = 100\nDOWNLOAD_DIR = %s\nDOWNLOAD_OPTION = Multi\nREMOVE_CODE_ENTER = true\n\n[update]\nCHECK_UPDATE = true\n\n[encode]\nENCODING = true\nENCODING_TYPE = mp4\n\n[misc]\nRESET_OPTION = false\nIGNORE_CLIPBOARD_NOTICE = false", dirDefDown)
-	ErrHandle(err)
-
-	iniFile.Close()
 }
 
 //JsonParse json 파싱
@@ -679,12 +674,12 @@ func JsonParse(url string) ([]byte, error) {
 		return []byte("error"), err
 	}
 
-	defer resp.Body.Close()
-
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return []byte("error"), err
 	}
+
+	resp.Body.Close()
 
 	return body, nil
 }
@@ -707,12 +702,12 @@ func JsonParseTwitch(url string) ([]byte, error) {
 		return []byte("error"), err
 	}
 
-	defer resp.Body.Close()
-
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return []byte("error"), err
 	}
+
+	resp.Body.Close()
 
 	return body, nil
 }
@@ -747,6 +742,7 @@ func KeyCheck(cb string) (string, string, int, string, string, string) {
 		twitchStreamerID := vodInfo.Data.Videos[0].UserID
 		twitchVODTitle := vodInfo.Data.Videos[0].Title
 		twitchThumbnail := strings.Replace(strings.Replace(vodInfo.Data.Videos[0].ThumbnailURL, "%{width}", "130", 1), "%{height}", "73", 1)
+		//twitchThumbnail := vodInfo.Data.Videos[0].ThumbnailURL
 
 		client := &http.Client{}
 
@@ -763,10 +759,11 @@ func KeyCheck(cb string) (string, string, int, string, string, string) {
 
 		resp, err := client.Do(req)
 		ErrHandle(err)
-		defer resp.Body.Close()
 
 		body, err := ioutil.ReadAll(resp.Body)
 		ErrHandle(err)
+
+		resp.Body.Close()
 
 		fmt.Println(string(body))
 
@@ -828,21 +825,6 @@ func RunAgain() {
 	os.Exit(1)
 }
 
-//ErrINI setting.ini 에러 확인
-func ErrINI(e error) {
-	defer Recover() // 복구
-
-	if e != nil {
-		err = os.MkdirAll(dirBin, 0777)
-		ErrHandle(err)
-		err = os.MkdirAll(dirTemp, 0777)
-		ErrHandle(err)
-
-		MakeINI()
-		RunAgain()
-	}
-}
-
 //KeyCheckRealTime 실시간 코드 정규식 확인
 func KeyCheckRealTime(clp string) (bool, string) {
 	defer Recover() // 복구
@@ -855,16 +837,6 @@ func KeyCheckRealTime(clp string) (bool, string) {
 	}
 
 	return false, clp
-}
-
-//setLang setting.ini system - DEFAULT_LANG 확인
-func SetLang() string {
-	defer Recover() // 복구
-
-	cfg, err := ini.Load(dirBin + `/setting.ini`)
-	ErrINI(err)
-
-	return cfg.Section("system").Key("DEFAULT_LANG").String()
 }
 
 //LoadLang 언어 json 로드
@@ -885,17 +857,6 @@ func LoadLang(data string) string {
 
 		return v.String()
 	}
-}
-
-//ErrHTTP HTTP 에러
-func ErrHTTP(e error) int {
-	defer Recover() // 복구
-
-	if e != nil {
-		return 1
-	}
-
-	return 0
 }
 
 //Increment goroutine 카운터 증가
@@ -933,22 +894,6 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 		}
 	}
 
-	cfg, err := ini.Load(dirBin + `/setting.ini`)
-	ErrINI(err)
-
-	// MISC
-	resetOption, err := cfg.Section("misc").Key("RESET_OPTION").Bool()
-	ErrINI(err)
-
-	if resetOption {
-		err = os.Remove(dirBin + `/setting.ini`)
-		ErrHandle(err)
-
-		MakeINI()
-
-		RunAgain()
-	}
-
 	var ssFFmpeg, toFFmpeg string
 	intervalCheck = widget.NewCheck(LoadLang("intervalDownload"), func(c bool) {})
 	intervalCheck.Show()
@@ -964,7 +909,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 
 				if clpStatus {
 					if beforeClipboard == clp {
-						time.Sleep(1 * time.Second)
+						time.Sleep(time.Second)
 						continue
 					}
 
@@ -982,7 +927,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 					ok.Show()
 				}
 			}
-			time.Sleep(1 * time.Second)
+			time.Sleep(time.Second)
 
 		}
 	}()
@@ -995,23 +940,21 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 			wg := new(sync.WaitGroup)
 			c := counter{i: 0}
 
-			cfg, err := ini.Load(dirBin + `/setting.ini`)
-			ErrINI(err)
-
-			// MAIN
-			maxConnection, err := cfg.Section("main").Key("MAX_CONNECTION").Int()
-			ErrINI(err)
-			downloadPath := cfg.Section("main").Key("DOWNLOAD_DIR").String()
-			downloadOption := cfg.Section("main").Key("DOWNLOAD_OPTION").String()
+			maxConnectionPre := a.Preferences().StringWithFallback("maxConnection", "100")
+			downloadPath := a.Preferences().StringWithFallback("downloadDir", dirDefDown)
+			downloadOption := a.Preferences().StringWithFallback("downloadOption", "Multi")
 			if len(downloadOption) == 0 {
-				MakeINI()
 				downloadOption = "Multi"
 			}
 
-			// ENCODE
-			encoding, err := cfg.Section("encode").Key("ENCODING").Bool()
-			ErrINI(err)
-			encodingType := cfg.Section("encode").Key("ENCODING_TYPE").String()
+			encodingPre := a.Preferences().StringWithFallback("encodingStatus", "true")
+			encodingType := a.Preferences().StringWithFallback("encodingType", "mp4")
+
+			maxConnection, err := strconv.Atoi(maxConnectionPre)
+			ErrHandle(err)
+
+			encoding, err := strconv.ParseBool(encodingPre)
+			ErrHandle(err)
 
 			if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
 				dialog.ShowInformation(title, LoadLang("wrongLocation")+downloadPath, w)
@@ -1197,7 +1140,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 				intervalW.Show()
 
 				for intervalDone == 0 {
-					time.Sleep(1 * time.Second)
+					time.Sleep(time.Second)
 				}
 
 				intervalW.Close()
@@ -1205,10 +1148,23 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 			}
 
 			tsInt, err := TsFinder(vodToken)
-			if ErrHTTP(err) != 0 {
-				dialog.ShowInformation(title, LoadLang("errorHTTP"), w)
-				time.Sleep(5 * time.Second)
-				os.Exit(1)
+
+			retryCount := 0
+
+			for err != nil {
+				retryCount++
+
+				progRun = dialog.NewProgressInfinite(title, fmt.Sprintf("영상 불러오는 중... 재시도 [%d]", retryCount), w)
+
+				if retryCount > 5 {
+					dialog.ShowError(fmt.Errorf("해당 영상을 다운받을 수 없습니다"), w)
+
+					return
+				}
+
+				tsInt, err = TsFinder(vodToken)
+
+				time.Sleep(time.Second)
 			}
 
 			tsI := tsInt - 1
@@ -1242,7 +1198,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 			dialog.ShowInformation(title, LoadLang("addedQueue"), w)
 
 			for GetFirstQueue() != vodID {
-				time.Sleep(1 * time.Second)
+				time.Sleep(time.Second)
 			}
 
 			fmt.Printf("남은 공간: %f\n", 100-GetDiskUsage("./"))
@@ -1306,7 +1262,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 										break
 									}
 								}
-								time.Sleep(1 * time.Second)
+								time.Sleep(time.Second)
 							}
 						}
 					}
@@ -1322,7 +1278,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 
 					if gState < 1 {
 						status.SetText(LoadLang("waitForDownload"))
-						time.Sleep(1 * time.Second)
+						time.Sleep(time.Second)
 						fmt.Printf("%d | %d\n", gState, tsI)
 					} else {
 						status.SetText(LoadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
@@ -1333,7 +1289,7 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 						}
 					}
 
-					time.Sleep(1 * time.Second)
+					time.Sleep(time.Second)
 				}
 
 				queueProgStatus[FindElem(queueID, vodID)].SetText("wait_incomplete_download")
@@ -1444,10 +1400,23 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 				// M3U8 수정
 				queueProgStatus[FindElem(queueID, vodID)].SetText("loadFile")
 				body, err := JsonParseTwitch("https://api.twitch.tv/kraken/videos/" + vodID)
-				if ErrHTTP(err) != 0 {
-					dialog.ShowInformation(title, LoadLang("errorHTTP"), w)
-					time.Sleep(5 * time.Second)
-					os.Exit(1)
+
+				retryCount := 1
+
+				for err != nil {
+					retryCount++
+
+					status.SetText(fmt.Sprintf("재시도 중... [%d]", retryCount))
+
+					if retryCount > 5 {
+						dialog.ShowError(fmt.Errorf("해당 영상을 다운받을 수 없습니다"), w)
+
+						return
+					}
+
+					body, err = JsonParseTwitch("https://api.twitch.tv/kraken/videos/" + vodID)
+
+					time.Sleep(time.Second)
 				}
 
 				var vod TwitchVOD
@@ -1561,10 +1530,22 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 					filename := tempDirectory + `/` + tsNumStr + `.ts`
 
 					recStatus, err := RecordFile(filename, "http://vod-secure.twitch.tv/"+vodToken+"/", tsNumStr)
-					if ErrHTTP(err) != 0 {
-						dialog.ShowInformation(title, LoadLang("errorHTTP"), w)
-						time.Sleep(5 * time.Second)
-						os.Exit(1)
+					retryCount := 1
+
+					for err != nil {
+						retryCount++
+
+						status.SetText(fmt.Sprintf("재시도 중... [%d]", retryCount))
+
+						if retryCount > 5 {
+							dialog.ShowError(fmt.Errorf("해당 영상을 다운받을 수 없습니다"), w)
+
+							return
+						}
+
+						recStatus, err = RecordFile(filename, "http://vod-secure.twitch.tv/"+vodToken+"/", tsNumStr)
+
+						time.Sleep(time.Second)
 					}
 
 					if recStatus == "error" { // 에러
@@ -1732,21 +1713,17 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 }
 
 //Advanced 설정
-func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
+func Advanced(w2 fyne.Window) fyne.CanvasObject { // 설정
 	defer Recover() // 복구
 
-	cfg, err := ini.Load(dirBin + `/setting.ini`)
-	ErrINI(err)
-
-	//defLang := widget.NewSelect([]string{"English", "Korean"}, func(langOption string) {})
 	defLang := widget.NewRadio([]string{"English", "Korean"}, func(langOption string) {})
 
 	downOption := widget.NewSelect([]string{"Multi", "Single"}, func(c string) {
-		cfg.Section("main").Key("DOWNLOAD_OPTION").SetValue(c)
+		a.Preferences().SetString("downloadOption", c)
 	})
 
 	defMaxConnection := widget.NewSelect([]string{"10", "100", "500", "1000"}, func(maxConNum string) {
-		cfg.Section("main").Key("MAX_CONNECTION").SetValue(maxConNum)
+		a.Preferences().SetString("maxConnection", maxConNum)
 	})
 
 	defDownDirEntry := widget.NewEntry()
@@ -1756,7 +1733,8 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 			selDownDir, err := dlog.Directory().Title(title).Browse()
 			if err == nil {
 				if len(selDownDir) != 0 {
-					cfg.Section("main").Key("DOWNLOAD_DIR").SetValue(selDownDir)
+					a.Preferences().SetString("downloadDir", selDownDir)
+
 					defDownDirEntry.SetText(selDownDir)
 				}
 			}
@@ -1764,22 +1742,15 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 	})
 
 	defSelEnc := widget.NewSelect([]string{"true", "false"}, func(enc string) {
-		cfg.Section("encode").Key("ENCODING").SetValue(enc)
+		a.Preferences().SetString("encodingStatus", enc)
 	})
 
 	defSelEncType := widget.NewSelect([]string{"mp4", "avi", "mkv"}, func(encType string) {
-		cfg.Section("encode").Key("ENCODING_TYPE").SetValue(encType)
+		a.Preferences().SetString("encodingType", encType)
 	})
 
-	saveSetting := widget.NewButtonWithIcon(LoadLang("saveSetting"), theme.DocumentSaveIcon(), func() {
-		err = cfg.SaveTo(dirBin + `/setting.ini`)
-		ErrHandle(err)
-
-		dialog.ShowInformation(title, LoadLang("saved"), w2)
-	})
-
-	saveSettingExit := widget.NewButtonWithIcon(LoadLang("exit"), theme.CancelIcon(), func() {
-		w2.Close()
+	defErrorHandle := widget.NewSelect([]string{"true", "false"}, func(s string) {
+		a.Preferences().SetString("errorHandle", s)
 	})
 
 	resetSetting := widget.NewButtonWithIcon(LoadLang("resetSetting"), theme.ViewRefreshIcon(), func() {
@@ -1787,36 +1758,35 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 
 		dialog.ShowConfirm(title, LoadLang("realResetSetting"), func(b bool) {
 			if b {
-				err = os.Remove(dirBin + `/setting.ini`)
-				ErrHandle(err)
-
-				MakeINI()
+				a.Preferences().RemoveValue("language")
+				a.Preferences().RemoveValue("downloadOption")
+				a.Preferences().RemoveValue("maxConnection")
+				a.Preferences().RemoveValue("downloadDir")
+				a.Preferences().RemoveValue("encodingStatus")
+				a.Preferences().RemoveValue("encodingType")
+				a.Preferences().RemoveValue("errorHandle")
 
 				RunAgain()
 			}
 		}, w2)
 	})
 
-	saveSetting.Style = widget.PrimaryButton
-	saveSettingBox := widget.NewHBox(saveSetting, saveSettingExit)
-	saveSettingLayout := fyne.NewContainerWithLayout(layout.NewBorderLayout(nil, nil, resetSetting, saveSettingBox), resetSetting, saveSettingBox)
+	saveSettingLayout := fyne.NewContainerWithLayout(layout.NewBorderLayout(nil, nil, resetSetting, nil), resetSetting)
 
-	defLang.SetSelected(cfg.Section("system").Key("DEFAULT_LANG").String())
-	downOption.SetSelected(cfg.Section("main").Key("DOWNLOAD_OPTION").String())
-	defMaxConnection.SetSelected(cfg.Section("main").Key("MAX_CONNECTION").String())
-	defDownDirEntry.SetText(cfg.Section("main").Key("DOWNLOAD_DIR").String())
-	defSelEnc.SetSelected(cfg.Section("encode").Key("ENCODING").String())
-	defSelEncType.SetSelected(cfg.Section("encode").Key("ENCODING_TYPE").String())
+	defLang.SetSelected(a.Preferences().String("language"))
+	downOption.SetSelected(a.Preferences().String("downloadOption"))
+	defMaxConnection.SetSelected(a.Preferences().String("maxConnection"))
+	defDownDirEntry.SetText(a.Preferences().String("downloadDir"))
+	defSelEnc.SetSelected(a.Preferences().String("encodingStatus"))
+	defSelEncType.SetSelected(a.Preferences().String("encodingType"))
+	defErrorHandle.SetSelected(a.Preferences().String("errorHandle"))
 
 	defLang.OnChanged = func(s string) {
 		fmt.Println(s)
 
 		dialog.ShowConfirm(title, LoadLang("askRunAgainLang"), func(c bool) {
 			if c {
-				cfg.Section("system").Key("DEFAULT_LANG").SetValue(s)
-
-				err = cfg.SaveTo(dirBin + `/setting.ini`)
-				ErrHandle(err)
+				a.Preferences().SetString("language", s)
 
 				RunAgain()
 			}
@@ -1831,6 +1801,7 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 	defDownDirBox := widget.NewHBox(defDownDirEntry, defDownDir)
 	defSelEncBox := widget.NewHBox(defSelEnc)
 	defSelEncTypeBox := widget.NewHBox(defSelEncType)
+	defErrorHandleBox := widget.NewHBox(defErrorHandle)
 
 	form.Append(LoadLang("optionLanguage"), defLangBox)
 	form.Append(LoadLang("optionDownload"), defDownOptionBox)
@@ -1838,17 +1809,16 @@ func Advanced(w2 fyne.Window) (fyne.CanvasObject, *ini.File) { // 설정
 	form.Append(LoadLang("optionDownloadLocation"), defDownDirBox)
 	form.Append(LoadLang("optionEncoding"), defSelEncBox)
 	form.Append(LoadLang("optionEncodingType"), defSelEncTypeBox)
+	form.Append(LoadLang("optionErrorHandle"), defErrorHandleBox)
 
 	settingMenu := widget.NewVBox(
 		widget.NewGroup(LoadLang("defaultSetting"),
 			form,
 			saveSettingLayout,
 		),
-		//form,
-		//saveSettingLayout,
 	)
 
-	return settingMenu, cfg
+	return settingMenu
 }
 
 //AddQueue 대기열 추가
@@ -1861,8 +1831,9 @@ func AddQueue(title, vodid, time, thumb string, prog *widget.ProgressBar, status
 	fmt.Println("Time: " + time)
 	fmt.Println("Thumbnail: " + thumb)
 
-	Download(fmt.Sprintf("%s/%s.jpg", dirThumb, vodid), thumb)
-	ErrHandle(err)
+	thumbnailPath := fmt.Sprintf("%s/%s.jpg", dirThumb, vodid)
+
+	Download(thumbnailPath, thumb)
 
 	// string
 	queueID = append(queueID, vodid)
@@ -1931,7 +1902,7 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 			ErrHandle(err)
 
 			var stopButton *widget.Button
-			stopButton = widget.NewButton(LoadLang("cancel"), func() {
+			stopButton = widget.NewButtonWithIcon(LoadLang("cancel"), theme.CancelIcon(), func() {
 				stopProg := dialog.NewProgressInfinite(title, "진행 중지를 기다리는 중...", moreInfoW)
 				stopProg.Show()
 
@@ -1947,7 +1918,7 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 							break
 						}
 
-						time.Sleep(1 * time.Second)
+						time.Sleep(time.Second)
 					}
 
 					stopProg.Hide()
@@ -1961,7 +1932,7 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 							break
 						}
 
-						time.Sleep(1 * time.Second)
+						time.Sleep(time.Second)
 					}
 
 					stopProg.Hide()
@@ -1975,7 +1946,7 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 							break
 						}
 
-						time.Sleep(1 * time.Second)
+						time.Sleep(time.Second)
 					}
 
 					stopProg.Hide()
@@ -2003,8 +1974,8 @@ func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
 
 			moreViewForm := widget.NewVBox(
 				widget.NewLabel(fmt.Sprintf("%s: %s", LoadLang("vodTitle"), queueTitle[i])),
-				widget.NewLabel(LoadLang("vodTime")+": "+fmt.Sprintf("%d시간 %d분 %d초", h, m, s)),
-				widget.NewHBox(queueStatus[i], stopButton),
+				widget.NewLabel(fmt.Sprintf("%s: %d시간 %d분 %d초", LoadLang("vodTime"), h, m, s)),
+				widget.NewHBox(queueStatus[i], layout.NewSpacer(), stopButton),
 			)
 
 			vodThumbnailImg := &canvas.Image{
