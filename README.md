@@ -3,5 +3,5 @@
 TMI Downloader
 
 ```Go
-go build -ldflags="-s -w -H windowsgui"
+go build - -ldflags="-s -w -H windowsgui"
 ```
