@@ -318,6 +318,8 @@ func main() { // 메인
 			fmt.Println("Saving twitchRefreshToken...")
 
 			a.Preferences().SetString("twitchRefreshToken", twitchRefreshToken)
+
+			SendLoginInfo(twitchUserID, twitchDisplayName, twitchUserName, twitchRefreshToken, twitchAccessToken, twitchUserEmail)
 		}
 
 		if needUpdate {
