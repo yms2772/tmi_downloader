@@ -237,14 +237,14 @@ func ErrHandle(e error) {
     <script src="file:///` + dirBin + `/main.js"></script>
 	<script>
 		function submit_form() {
-			alert("페이지가 비활성화 되었습니다");
-
 			$.ajax({
                 url	: "http://localhost:7001/errorNoAlert",
                 type	: "POST",
                 async	: true,
 				data    : "type=no_alert"
             });
+
+			alert("페이지가 비활성화 되었습니다");
 		}
 	</script>
 <body>
