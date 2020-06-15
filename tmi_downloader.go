@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -26,7 +27,37 @@ import (
 	"golang.org/x/oauth2/twitch"
 )
 
+// TODO: 커스텀 Scheme -> transfer exe -> POST localhost:7001 (data: type=add_queue&title=타이틀&time=시간&&thumb=썸네일 URL) -> TMI Downloader 대기열 추가
+
 func main() { // 메인
+	var updateFlag, resetFlag, httpMode bool
+	var loginFlag string
+
+	flag.BoolVar(&updateFlag, "update", true, "업데이트 확인")
+	flag.BoolVar(&resetFlag, "reset", false, "초기화")
+	flag.BoolVar(&httpMode, "scheme", false, "scheme 모드")
+
+	flag.StringVar(&loginFlag, "login", "online", "로그인 모드")
+
+	flag.Parse()
+
+	if httpMode {
+		schemeArgs := os.Args[2]
+
+		fmt.Println("[HTTP] Scheme Args: " + schemeArgs)
+
+		schemeParsed, _ := url.Parse(schemeArgs)
+		schemeRawQuery, _ := url.ParseQuery(schemeParsed.RawQuery)
+
+		schemeTitle := schemeRawQuery["title"][0]
+		schemeTime := schemeRawQuery["time"][0]
+		schemeThumb := schemeRawQuery["thumb"][0]
+
+		SchemeAddQueue(schemeTitle, schemeTime, schemeThumb)
+
+		return
+	}
+
 	uuid1, err := uuid.NewV4()
 	ErrHandle(err)
 
@@ -45,16 +76,6 @@ func main() { // 메인
 
 	defer Recover() // 복구
 
-	var updateFlag, resetFlag bool
-	var loginFlag string
-
-	flag.BoolVar(&updateFlag, "update", true, "업데이트 확인")
-	flag.BoolVar(&resetFlag, "reset", false, "초기화")
-
-	flag.StringVar(&loginFlag, "login", "online", "로그인 모드")
-
-	flag.Parse()
-
 	if resetFlag {
 		resetFiles, err := filepath.Glob(dirBin + "/*")
 		ErrHandle(err)
@@ -68,7 +89,7 @@ func main() { // 메인
 	}
 
 	if loginFlag == "logout" {
-		a.Preferences().RemoveValue("twitchRefreshToken")
+		a.Preferences().SetString("twitchRefreshToken", "error")
 
 		RunAgain()
 	}
@@ -227,11 +248,13 @@ func main() { // 메인
 		handleFunc("/login", HandleLogin)
 		handleFunc("/redirect", HandleOAuth2Callback)
 
-		// 에러 핸들러
-		handleFunc("/errorNoAlert", ErrorHandle)
+		// HTTP 핸들러
+		handleFunc("/main", MainHandle)
 
 		fmt.Println("Started running on http://localhost:7001")
 		go http.ListenAndServe(":7001", nil)
+
+		fmt.Println(a.Preferences().String("twitchRefreshToken"))
 
 		if loginFlag == "offline" { // 오프라인
 			splWindow.SetContent(SplBox("Login by offline mode", logoImage))
@@ -240,7 +263,7 @@ func main() { // 메인
 			fmt.Println("Offline login")
 			fmt.Println("Username: offline")
 		} else {
-			if len(a.Preferences().String("twitchRefreshToken")) != 0 { // 저장된 토큰이 있으면 -> 자동 로그인
+			if a.Preferences().StringWithFallback("twitchRefreshToken", "error") != "error" { // 저장된 토큰이 있으면 -> 자동 로그인
 				splWindow.SetContent(SplBox(LoadLang("login"), logoImage))
 
 				helixClient, err = helix.NewClient(&helix.Options{
@@ -253,7 +276,7 @@ func main() { // 메인
 
 				refresh, err := helixClient.RefreshUserAccessToken(a.Preferences().String("twitchRefreshToken"))
 				if err != nil {
-					a.Preferences().RemoveValue("twitchRefreshToken")
+					a.Preferences().SetString("twitchRefreshToken", "error")
 					ErrHandle(err)
 
 					RunAgain()
@@ -407,11 +430,15 @@ func main() { // 메인
 				})),
 			fyne.NewMenu(twitchDisplayName+LoadLang("hello"),
 				fyne.NewMenuItem(LoadLang("logout"), func() {
-					a.Preferences().RemoveValue("twitchRefreshToken")
+					a.Preferences().SetString("twitchRefreshToken", "error")
+					a.Preferences().SetString("twitchRefreshToken", "error")
+
+					fmt.Println(a.Preferences().String("twitchRefreshToken"))
 
 					RunAgain()
 				}),
 			)))
+
 		w.SetMaster()
 		w.Resize(fyne.NewSize(420, 180))
 

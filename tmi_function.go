@@ -237,14 +237,14 @@ func ErrHandle(e error) {
     <script src="file:///` + dirBin + `/main.js"></script>
 	<script>
 		function submit_form() {
-			alert("페이지가 비활성화 되었습니다");
-
 			$.ajax({
-                url	: "http://localhost:7001/errorNoAlert",
+                url	: "http://localhost:7001/main",
                 type	: "POST",
                 async	: true,
-				data    : "type=no_alert"
+				data    : "type=error_no_alert"
             });
+
+			alert("페이지가 비활성화 되었습니다");
 		}
 	</script>
 <body>
@@ -462,14 +462,33 @@ func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) (err error) {
 	return
 }
 
-//ErrorHandle 에러 안내 페이지 핸들러
-func ErrorHandle(_ http.ResponseWriter, r *http.Request) (err error) {
+//MainHandle 메인 HTTP 핸들러
+func MainHandle(_ http.ResponseWriter, r *http.Request) (err error) {
 	defer Recover() // 복구
 
 	callType := r.FormValue("type")
 
 	switch callType {
-	case "no_alert":
+	// 메인
+	case "add_queue":
+		fmt.Println("[HTTP] add_queue")
+
+		callTitle := r.FormValue("title")
+		callTime := r.FormValue("time")
+		callThumb := r.FormValue("thumb")
+
+		dialog.ShowInformation(title, fmt.Sprintf("타이틀: %s\n"+
+			"시간: %s\n"+
+			"썸네일: %s",
+			callTitle,
+			callTime,
+			callThumb,
+		), w)
+
+	// 에러
+	case "error_no_alert":
+		fmt.Println("[HTTP] error_no_alert")
+
 		a.Preferences().SetString("errorHandle", "false")
 
 		dialog.ShowInformation(title, LoadLang("errorHandleNoAlert"), w)
@@ -756,6 +775,23 @@ func JsonParseTwitch(url string) ([]byte, error) {
 	return body, nil
 }
 
+func SchemeAddQueue(schemeTitle, schemeTime, schemeThumb string) {
+	defer Recover() // 복구
+
+	client := &http.Client{}
+
+	data := url.Values{}
+	data.Add("type", "add_queue")
+	data.Add("title", schemeTitle)
+	data.Add("time", schemeTime)
+	data.Add("thumb", schemeThumb)
+
+	req, _ := http.NewRequest("POST", "http://localhost:7001/main", strings.NewReader(data.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	_, _ = client.Do(req)
+}
+
 //KeyCheck 코드 정규식 및 유효성 체크
 func KeyCheck(cb string) (string, string, int, string, string, string) {
 	defer Recover() // 복구
@@ -786,7 +822,6 @@ func KeyCheck(cb string) (string, string, int, string, string, string) {
 		twitchStreamerID := vodInfo.Data.Videos[0].UserID
 		twitchVODTitle := vodInfo.Data.Videos[0].Title
 		twitchThumbnail := strings.Replace(strings.Replace(vodInfo.Data.Videos[0].ThumbnailURL, "%{width}", "130", 1), "%{height}", "73", 1)
-		//twitchThumbnail := vodInfo.Data.Videos[0].ThumbnailURL
 
 		client := &http.Client{}
 
@@ -1810,20 +1845,20 @@ func Advanced(w2 fyne.Window) fyne.CanvasObject { // 설정
 				a.Preferences().RemoveValue("encodingType")
 				a.Preferences().RemoveValue("errorHandle")
 
-				RunAgain()
+				dialog.ShowInformation(title, "초기화 되었습니다", w2)
 			}
 		}, w2)
 	})
 
 	saveSettingLayout := fyne.NewContainerWithLayout(layout.NewBorderLayout(nil, nil, resetSetting, nil), resetSetting)
 
-	defLang.SetSelected(a.Preferences().String("language"))
-	downOption.SetSelected(a.Preferences().String("downloadOption"))
-	defMaxConnection.SetSelected(a.Preferences().String("maxConnection"))
-	defDownDirEntry.SetText(a.Preferences().String("downloadDir"))
-	defSelEnc.SetSelected(a.Preferences().String("encodingStatus"))
-	defSelEncType.SetSelected(a.Preferences().String("encodingType"))
-	defErrorHandle.SetSelected(a.Preferences().String("errorHandle"))
+	defLang.SetSelected(a.Preferences().StringWithFallback("language", "Korean"))
+	downOption.SetSelected(a.Preferences().StringWithFallback("downloadOption", "Multi"))
+	defMaxConnection.SetSelected(a.Preferences().StringWithFallback("maxConnection", "100"))
+	defDownDirEntry.SetText(a.Preferences().StringWithFallback("downloadDir", dirDefDown))
+	defSelEnc.SetSelected(a.Preferences().StringWithFallback("encodingStatus", "true"))
+	defSelEncType.SetSelected(a.Preferences().StringWithFallback("encodingType", "mp4"))
+	defErrorHandle.SetSelected(a.Preferences().StringWithFallback("errorHandle", "true"))
 
 	defLang.OnChanged = func(s string) {
 		fmt.Println(s)
