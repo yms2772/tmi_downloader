@@ -28,15 +28,14 @@ import (
 	"time"
 
 	"fyne.io/fyne"
-	"fyne.io/fyne/canvas"
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/layout"
 	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
 
 	"github.com/dariubs/percent"
+	"github.com/gen2brain/beeep"
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
-	"github.com/martinlindhe/notify"
 	"github.com/nicklaw5/helix"
 	"github.com/ricochet2200/go-disk-usage/du"
 	dlog "github.com/sqweek/dialog"
@@ -215,9 +214,9 @@ func ErrHandle(e error) {
 
 		if errorHandleStatus {
 			if err == nil {
-				notify.Alert(title, "Notice", fmt.Sprintf("The error log has been sent.\nWe will fix it as soon as possible."), dirBin+"/logo.png")
+				_ = beeep.Alert(title, "The error log has been sent.\nWe will fix it as soon as possible.", dirBin+"/logo.png")
 			} else {
-				notify.Alert(title, "Notice", fmt.Sprintf("The error log has not been sent.\nPlease contact at support@tmi.tips."), dirBin+"/logo.png")
+				_ = beeep.Alert(title, "The error log has not been sent.\nPlease contact at support@tmi.tips.", dirBin+"/logo.png")
 			}
 
 			WriteResource(dirBin+"/bootstrap.css", bootstrapCSS)
@@ -463,29 +462,35 @@ func HandleOAuth2Callback(w http.ResponseWriter, r *http.Request) (err error) {
 }
 
 //MainHandle 메인 HTTP 핸들러
-func MainHandle(_ http.ResponseWriter, r *http.Request) (err error) {
+func MainHandle(rw http.ResponseWriter, r *http.Request) (err error) {
 	defer Recover() // 복구
 
 	callType := r.FormValue("type")
 
 	switch callType {
-	// 메인
+	case "status":
+		fmt.Println("[HTTP] status")
+
+		rw.WriteHeader(http.StatusOK)
 	case "add_queue":
 		fmt.Println("[HTTP] add_queue")
 
-		callTitle := r.FormValue("title")
-		callTime := r.FormValue("time")
-		callThumb := r.FormValue("thumb")
+		callURL := r.FormValue("url")
 
-		dialog.ShowInformation(title, fmt.Sprintf("타이틀: %s\n"+
-			"시간: %s\n"+
-			"썸네일: %s",
-			callTitle,
-			callTime,
-			callThumb,
-		), w)
+		keyEntry.SetText(callURL)
 
-	// 에러
+		keyEntry.onEnter()
+	case "set_window":
+		fmt.Println("[HTTP] set_window")
+
+		callWindow := r.FormValue("window")
+
+		switch callWindow {
+		case "show":
+			w.Show()
+		case "hide":
+			w.Hide()
+		}
 	case "error_no_alert":
 		fmt.Println("[HTTP] error_no_alert")
 
@@ -495,6 +500,52 @@ func MainHandle(_ http.ResponseWriter, r *http.Request) (err error) {
 	}
 
 	return
+}
+
+func CheckStatus() bool {
+	client := &http.Client{}
+
+	data := url.Values{}
+	data.Add("type", "status")
+
+	req, _ := http.NewRequest("POST", "http://localhost:7001/main", strings.NewReader(data.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client.Timeout = 100 * time.Millisecond
+
+	resp, err := client.Do(req)
+	if err != nil { // 다운로더가 켜져있지 않은 경우
+		return false
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		return true
+	}
+
+	return false
+}
+
+func ShowWindow(status bool) {
+	client := &http.Client{}
+
+	data := url.Values{}
+	data.Add("type", "set_window")
+
+	if status {
+		data.Add("window", "show")
+	} else {
+		data.Add("window", "hide")
+	}
+
+	req, _ := http.NewRequest("POST", "http://localhost:7001/main", strings.NewReader(data.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client.Timeout = 100 * time.Millisecond
+
+	_, err := client.Do(req)
+	if err != nil { // 다운로더가 켜져있지 않은 경우
+		dlog.Message("%s", "TMI Downloader를 먼저 실행해주세요").Title(title).Error()
+	}
 }
 
 //HumanError Twitch OAuth2
@@ -775,21 +826,22 @@ func JsonParseTwitch(url string) ([]byte, error) {
 	return body, nil
 }
 
-func SchemeAddQueue(schemeTitle, schemeTime, schemeThumb string) {
-	defer Recover() // 복구
-
+func SchemeAddQueue(schemeURL string) {
 	client := &http.Client{}
 
 	data := url.Values{}
 	data.Add("type", "add_queue")
-	data.Add("title", schemeTitle)
-	data.Add("time", schemeTime)
-	data.Add("thumb", schemeThumb)
+	data.Add("url", schemeURL)
 
 	req, _ := http.NewRequest("POST", "http://localhost:7001/main", strings.NewReader(data.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	_, _ = client.Do(req)
+	client.Timeout = 100 * time.Millisecond
+
+	_, err := client.Do(req)
+	if err != nil { // 다운로더가 켜져있지 않은 경우
+		dlog.Message("%s", "TMI Downloader를 먼저 실행해주세요").Title(title).Error()
+	}
 }
 
 //KeyCheck 코드 정규식 및 유효성 체크
@@ -834,7 +886,8 @@ func KeyCheck(cb string) (string, string, int, string, string, string) {
 		req, err := http.NewRequest("POST", allinone, strings.NewReader(data.Encode()))
 		ErrHandle(err)
 
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Add("Request-Header", "go-lang")
 
 		resp, err := client.Do(req)
 		ErrHandle(err)
@@ -898,6 +951,8 @@ func RunAgain() {
 	path, err := os.Executable()
 	ErrHandle(err)
 
+	fmt.Println(path)
+
 	err = exec.Command(path).Start()
 	ErrHandle(err)
 
@@ -954,286 +1009,486 @@ func GetFirstQueue() string {
 	return queueID[0]
 }
 
-//DownloadHome 다운로드 홈
-func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
-	defer Recover() // 복구
-
-	keyEntry := widget.NewEntry()
-	keyEntry.SetPlaceHolder(LoadLang("keyEntryHolder"))
-
-	keyEntry.OnChanged = func(s string) {
-		if s == "errortest" {
-			ErrHandle(fmt.Errorf("%s", "Error Test\n에러 테스트"))
-			keyEntry.SetText("recovered")
-		}
-
-		if len(s) > 40 {
-			dialog.ShowInformation(title, LoadLang("invalidCode"), w)
-			keyEntry.SetText("")
-		}
-	}
-
-	var ssFFmpeg, toFFmpeg string
-	intervalCheck = widget.NewCheck(LoadLang("intervalDownload"), func(c bool) {})
-	intervalCheck.Show()
-
-	// 클립보드 자동 감지
-	checkClipboard = false
-	beforeClipboard := ""
-
+func (e *enterEntry) onEnter() {
 	go func() {
-		for {
-			if checkClipboard {
-				clpStatus, clp := KeyCheckRealTime(w.Clipboard().Content())
+		if len(e.Entry.Text) == 0 {
+			return
+		}
 
-				if clpStatus {
-					if beforeClipboard == clp {
-						time.Sleep(time.Second)
+		ShowWindow(true)
+
+		progRun := dialog.NewProgressInfinite(title, "영상 불러오는 중...", w)
+		progRun.Show()
+
+		wg := new(sync.WaitGroup)
+		c := counter{i: 0}
+
+		maxConnectionPre := a.Preferences().StringWithFallback("maxConnection", "100")
+		downloadPath := a.Preferences().StringWithFallback("downloadDir", dirDefDown)
+		downloadOption := a.Preferences().StringWithFallback("downloadOption", "Multi")
+		if len(downloadOption) == 0 {
+			downloadOption = "Multi"
+		}
+
+		encodingPre := a.Preferences().StringWithFallback("encodingStatus", "true")
+		encodingType := a.Preferences().StringWithFallback("encodingType", "mp4")
+
+		maxConnection, err := strconv.Atoi(maxConnectionPre)
+		ErrHandle(err)
+
+		encoding, err := strconv.ParseBool(encodingPre)
+		ErrHandle(err)
+
+		if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
+			dialog.ShowInformation(title, LoadLang("wrongLocation")+downloadPath, w)
+			return
+		}
+
+		if encoding {
+			if _, err := os.Stat(dirBin + "/" + ffmpegBinary); os.IsNotExist(err) {
+				dialog.ShowInformation(title, LoadLang("errRequireFile"), w)
+				return
+			}
+		}
+
+		clipboard := e.Entry.Text
+		vodToken, vodID, vodTimeInt, vodType, vodTitle, vodThumbnail := KeyCheck(clipboard) // 대기열
+
+		if vodToken == "error" {
+			progRun.Hide()
+
+			switch vodTimeInt {
+			case 401:
+				dialog.ShowConfirm(title, LoadLang("notSubscriber"), func(b bool) {
+					if b {
+						OpenURL(fmt.Sprintf("https://www.twitch.tv/products/%s/ticket/new", vodID))
+					}
+				}, w)
+			case 500:
+				dialog.ShowInformation(title, LoadLang("invalidCode"), w)
+			default:
+				dialog.ShowInformation(title, LoadLang("unknownError"), w)
+			}
+
+			e.Entry.SetText("")
+			return
+		}
+
+		if ContainsElem(queueID, vodID) {
+			progRun.Hide()
+
+			dialog.ShowInformation(title, LoadLang("alreadyAdded"), w)
+			e.Entry.SetText("")
+
+			return
+		}
+
+		vodTime := strconv.Itoa(vodTimeInt) // 대기열
+
+		vodHour := vodTimeInt / 3600
+		vodMinute := (vodTimeInt - (3600 * vodHour)) / 60
+		vodSecond := vodTimeInt - (3600 * vodHour) - (vodMinute * 60)
+
+		if vodType == "highlight" {
+			downloadOption = "Single"
+			dialog.ShowInformation(title, LoadLang("highlightNotice"), w)
+		}
+
+		if intervalCheck.Checked { // 구간 설정
+			intervalProg := dialog.NewProgressInfinite(title, LoadLang("setIntervalRange"), w)
+			intervalProg.Show()
+
+			intervalW := fyne.CurrentApp().NewWindow(title)
+
+			downloadOption = "Single"
+
+			startHourSet := widget.NewEntry()
+			startMinSet := widget.NewEntry()
+			startSecSet := widget.NewEntry()
+			stopHourSet := widget.NewEntry()
+			stopMinSet := widget.NewEntry()
+			stopSecSet := widget.NewEntry()
+			startHourSet.Disable()
+			startMinSet.Disable()
+			startSecSet.Disable()
+			stopHourSet.Disable()
+			stopMinSet.Disable()
+			stopSecSet.Disable()
+
+			intervalStartCheck = widget.NewCheck("", func(c bool) {
+				if c {
+					startHourSet.Enable()
+					startMinSet.Enable()
+					startSecSet.Enable()
+				} else {
+					startHourSet.Disable()
+					startMinSet.Disable()
+					startSecSet.Disable()
+				}
+			})
+			intervalStartCheck.SetChecked(false)
+
+			intervalStopCheck = widget.NewCheck("", func(c bool) {
+				if c {
+					stopHourSet.Enable()
+					stopMinSet.Enable()
+					stopSecSet.Enable()
+				} else {
+					stopHourSet.Disable()
+					stopMinSet.Disable()
+					stopSecSet.Disable()
+				}
+			})
+			intervalStopCheck.SetChecked(false)
+
+			intervalStart := fyne.NewContainerWithLayout(layout.NewGridLayout(7),
+				intervalStartCheck,
+				startHourSet,
+				widget.NewLabel(LoadLang("intervalHour")),
+				startMinSet,
+				widget.NewLabel(LoadLang("intervalMin")),
+				startSecSet,
+				widget.NewLabel(LoadLang("intervalSec")),
+			)
+			intervalStop := fyne.NewContainerWithLayout(layout.NewGridLayout(7),
+				intervalStopCheck,
+				stopHourSet,
+				widget.NewLabel(LoadLang("intervalHour")),
+				stopMinSet,
+				widget.NewLabel(LoadLang("intervalMin")),
+				stopSecSet,
+				widget.NewLabel(LoadLang("intervalSec")),
+			)
+
+			startHourSet.SetText("00")
+			startMinSet.SetText("00")
+			startSecSet.SetText("00")
+
+			stopHourSet.SetText(fmt.Sprintf("%d", vodHour))
+			stopMinSet.SetText(fmt.Sprintf("%d", vodMinute))
+			stopSecSet.SetText(fmt.Sprintf("%d", vodSecond))
+
+			r, err := regexp.Compile(`\b\d{1,2}\b`)
+			ErrHandle(err)
+
+			intervalDone := 0
+			form := &widget.Form{
+				OnSubmit: func() {
+					if !intervalStartCheck.Checked && !intervalStopCheck.Checked {
+
+						intervalCheck.SetChecked(false)
+						return
+					}
+
+					isMatchedStartHour := r.MatchString(startHourSet.Text)
+					isMatchedStartMin := r.MatchString(startMinSet.Text)
+					isMatchedStartSec := r.MatchString(startSecSet.Text)
+					isMatchedStopHour := r.MatchString(stopHourSet.Text)
+					isMatchedStopMin := r.MatchString(stopMinSet.Text)
+					isMatchedStopSec := r.MatchString(stopSecSet.Text)
+
+					if !isMatchedStartHour || !isMatchedStartMin || !isMatchedStartSec || !isMatchedStopHour || !isMatchedStopMin || !isMatchedStopSec {
+						dialog.ShowInformation(title, LoadLang("errorLoadTime"), w)
+						intervalCheck.SetChecked(false)
+					} else {
+						ssFFmpeg = fmt.Sprintf("%s:%s:%s", startHourSet.Text, startMinSet.Text, startSecSet.Text)
+						toFFmpeg = fmt.Sprintf("%s:%s:%s", stopHourSet.Text, stopMinSet.Text, stopSecSet.Text)
+					}
+
+					intervalDone = 1
+
+					dialog.NewProgressInfinite(title, LoadLang("intervalRangeSaved"), intervalW).Show()
+				},
+			}
+			form.Append(LoadLang("intervalStart"), intervalStart)
+			form.Append(LoadLang("intervalStop"), intervalStop)
+
+			content := widget.NewVBox(
+				widget.NewGroup(LoadLang("tabSetting"),
+					form,
+				),
+			)
+
+			intervalW.SetOnClosed(func() {
+				progRun.Hide()
+				intervalProg.Hide()
+				return
+			})
+
+			intervalW.SetContent(content)
+			intervalW.Resize(fyne.NewSize(390, 160))
+			intervalW.SetIcon(theme.SettingsIcon())
+			intervalW.SetFixedSize(true)
+			intervalW.CenterOnScreen()
+			intervalW.Show()
+
+			for intervalDone == 0 {
+				time.Sleep(time.Second)
+			}
+
+			intervalW.Close()
+			intervalProg.Hide()
+		}
+
+		tsInt, err := TsFinder(vodToken)
+
+		retryCount := 0
+
+		for err != nil {
+			retryCount++
+
+			progRun = dialog.NewProgressInfinite(title, fmt.Sprintf("영상 불러오는 중... 재시도 [%d]", retryCount), w)
+
+			if retryCount > 5 {
+				dialog.ShowError(fmt.Errorf("해당 영상을 다운받을 수 없습니다"), w)
+
+				return
+			}
+
+			tsInt, err = TsFinder(vodToken)
+
+			time.Sleep(time.Second)
+		}
+
+		tsI := tsInt - 1
+
+		tempDirectory := dirTemp + "/" + vodID
+
+		err = os.MkdirAll(tempDirectory, 0777)
+		ErrHandle(err)
+
+		ClearDir(tempDirectory)
+
+		var cmd *exec.Cmd                      // 대기열
+		progressBar := widget.NewProgressBar() // 대기열
+
+		status := widget.NewLabel("...") // 대기열
+		status.SetText(LoadLang("waitForDownload"))
+
+		progressStatus := widget.NewEntry() // 대기열
+		progressStatus.SetText("wait")
+
+		progressStatus.OnChanged = func(s string) {
+			if s == "press_stop" {
+				status.SetText(status.Text + " " + LoadLang("canceled"))
+			}
+		}
+
+		AddQueue(vodTitle, vodID, vodTime, vodThumbnail, progressBar, status, progressStatus, cmd)
+
+		e.Entry.SetText("")
+		progRun.Hide()
+
+		for GetFirstQueue() != vodID {
+			time.Sleep(time.Second)
+		}
+
+		fmt.Printf("남은 공간: %f\n", 100-GetDiskUsage("./"))
+
+		_ = beeep.Alert(title, "Download Start", dirThumb+"/"+vodID+".jpg")
+
+		if downloadOption == "Multi" { // Multiple Download
+			gState := 0
+			dCycle := 0
+
+			fmt.Println(maxConnection)
+
+			queueProgStatus[FindElem(queueID, vodID)].SetText("download")
+			for i := 0; i <= tsI; i++ {
+				if queueProgStatus[FindElem(queueID, vodID)].Text == "press_stop" {
+					DelQueue(FindElem(queueID, vodID))
+					return
+				}
+
+				tsURL := "http://vod-secure.twitch.tv/" + vodToken + "/"
+
+				iS := strconv.Itoa(i)
+
+				filename := tempDirectory + `/` + iS + ".ts"
+
+				wg.Add(1)
+				go func(n int) {
+					err = DownloadFile(filename, tsURL, iS)
+					ErrHandle(err)
+
+					c.Increment()
+					wg.Done()
+				}(i)
+
+				if i != 0 {
+					if maxConnection > tsI {
 						continue
 					}
 
-					ok := dialog.NewConfirm(title, LoadLang("codeFound")+clp, func(res bool) {
-						if res {
-							beforeClipboard = clp
-							keyEntry.SetText(clp)
-						} else {
-							beforeClipboard = clp
-						}
-					}, w)
+					if i%maxConnection == 0 {
+						dCycle++
+						for gState < dCycle*maxConnection {
+							if queueProgStatus[FindElem(queueID, vodID)].Text == "press_stop" {
+								DelQueue(FindElem(queueID, vodID))
+								return
+							}
 
-					ok.SetConfirmText(LoadLang("confirm"))
-					ok.SetDismissText(LoadLang("dismiss"))
-					ok.Show()
+							gState := c.i
+
+							if gState == 0 {
+								status.SetText(LoadLang("waitForDownload"))
+							} else {
+								if gState == (dCycle-1)*maxConnection {
+									status.SetText(LoadLang("addQueue"))
+								} else {
+									status.SetText(LoadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
+									progressBar.SetValue(float64(gState) / float64(tsI))
+									fmt.Printf("%d | %d\n", gState, tsI)
+								}
+								if gState >= dCycle*maxConnection {
+									break
+								}
+							}
+							time.Sleep(time.Second)
+						}
+					}
 				}
 			}
-			time.Sleep(time.Second)
 
-		}
-	}()
-
-	button = widget.NewButtonWithIcon(LoadLang("runButton"), theme.MoveDownIcon(), func() {
-		go func() {
-			progRun := dialog.NewProgressInfinite(title, "영상 불러오는 중...", w)
-			progRun.Show()
-
-			wg := new(sync.WaitGroup)
-			c := counter{i: 0}
-
-			maxConnectionPre := a.Preferences().StringWithFallback("maxConnection", "100")
-			downloadPath := a.Preferences().StringWithFallback("downloadDir", dirDefDown)
-			downloadOption := a.Preferences().StringWithFallback("downloadOption", "Multi")
-			if len(downloadOption) == 0 {
-				downloadOption = "Multi"
-			}
-
-			encodingPre := a.Preferences().StringWithFallback("encodingStatus", "true")
-			encodingType := a.Preferences().StringWithFallback("encodingType", "mp4")
-
-			maxConnection, err := strconv.Atoi(maxConnectionPre)
-			ErrHandle(err)
-
-			encoding, err := strconv.ParseBool(encodingPre)
-			ErrHandle(err)
-
-			if _, err := os.Stat(downloadPath); os.IsNotExist(err) {
-				dialog.ShowInformation(title, LoadLang("wrongLocation")+downloadPath, w)
-				return
-			}
-
-			if encoding {
-				if _, err := os.Stat(dirBin + "/" + ffmpegBinary); os.IsNotExist(err) {
-					dialog.ShowInformation(title, LoadLang("errRequireFile"), w)
+			for gState < tsI {
+				if queueProgStatus[FindElem(queueID, vodID)].Text == "press_stop" {
+					DelQueue(FindElem(queueID, vodID))
 					return
 				}
-			}
 
-			clipboard := keyEntry.Text
-			vodToken, vodID, vodTimeInt, vodType, vodTitle, vodThumbnail := KeyCheck(clipboard) // 대기열
+				gState := c.i
 
-			if vodToken == "error" {
-				progRun.Hide()
-
-				switch vodTimeInt {
-				case 401:
-					dialog.ShowConfirm(title, LoadLang("notSubscriber"), func(b bool) {
-						if b {
-							OpenURL(fmt.Sprintf("https://www.twitch.tv/products/%s/ticket/new", vodID))
-						}
-					}, w)
-				case 500:
-					dialog.ShowInformation(title, LoadLang("invalidCode"), w)
-				default:
-					dialog.ShowInformation(title, LoadLang("unknownError"), w)
+				if gState < 1 {
+					status.SetText(LoadLang("waitForDownload"))
+					time.Sleep(time.Second)
+					fmt.Printf("%d | %d\n", gState, tsI)
+				} else {
+					status.SetText(LoadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
+					progressBar.SetValue(float64(gState) / float64(tsI))
+					fmt.Printf("%d | %d\n", gState, tsI)
+					if gState >= tsI {
+						break
+					}
 				}
 
-				keyEntry.SetText("")
-				return
+				time.Sleep(time.Second)
 			}
 
-			if ContainsElem(queueID, vodID) {
-				progRun.Hide()
+			queueProgStatus[FindElem(queueID, vodID)].SetText("wait_incomplete_download")
+			status.SetText(LoadLang("waitIncompleteDownload"))
+			wg.Wait()
 
-				dialog.ShowInformation(title, LoadLang("alreadyAdded"), w)
-				keyEntry.SetText("")
+			status.SetText(LoadLang("generateFile"))
+			out, err := os.OpenFile(tempDirectory+`/`+vodID+`.ts`, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+			ErrHandle(err)
 
-				return
-			}
+			queueProgStatus[FindElem(queueID, vodID)].SetText("merge")
+			for i := 0; i <= tsI; i++ {
+				if queueProgStatus[FindElem(queueID, vodID)].Text == "press_stop" {
+					DelQueue(FindElem(queueID, vodID))
+					return
+				}
 
-			vodTime := strconv.Itoa(vodTimeInt) // 대기열
+				iS := strconv.Itoa(i)
 
-			vodHour := vodTimeInt / 3600
-			vodMinute := (vodTimeInt - (3600 * vodHour)) / 60
-			vodSecond := vodTimeInt - (3600 * vodHour) - (vodMinute * 60)
+				status.SetText(LoadLang("merging") + " " + strconv.FormatFloat(percent.PercentOf(i, tsI), 'f', 2, 64) + "%")
+				progressBar.SetValue(float64(i) / float64(tsI))
 
-			if vodType == "highlight" {
-				downloadOption = "Single"
-				dialog.ShowInformation(title, LoadLang("highlightNotice"), w)
-			}
-
-			if intervalCheck.Checked { // 구간 설정
-				intervalProg := dialog.NewProgressInfinite(title, LoadLang("setIntervalRange"), w)
-				intervalProg.Show()
-
-				intervalW := fyne.CurrentApp().NewWindow(title)
-
-				downloadOption = "Single"
-
-				startHourSet := widget.NewEntry()
-				startMinSet := widget.NewEntry()
-				startSecSet := widget.NewEntry()
-				stopHourSet := widget.NewEntry()
-				stopMinSet := widget.NewEntry()
-				stopSecSet := widget.NewEntry()
-				startHourSet.Disable()
-				startMinSet.Disable()
-				startSecSet.Disable()
-				stopHourSet.Disable()
-				stopMinSet.Disable()
-				stopSecSet.Disable()
-
-				intervalStartCheck = widget.NewCheck("", func(c bool) {
-					if c {
-						startHourSet.Enable()
-						startMinSet.Enable()
-						startSecSet.Enable()
-					} else {
-						startHourSet.Disable()
-						startMinSet.Disable()
-						startSecSet.Disable()
-					}
-				})
-				intervalStartCheck.SetChecked(false)
-
-				intervalStopCheck = widget.NewCheck("", func(c bool) {
-					if c {
-						stopHourSet.Enable()
-						stopMinSet.Enable()
-						stopSecSet.Enable()
-					} else {
-						stopHourSet.Disable()
-						stopMinSet.Disable()
-						stopSecSet.Disable()
-					}
-				})
-				intervalStopCheck.SetChecked(false)
-
-				intervalStart := fyne.NewContainerWithLayout(layout.NewGridLayout(7),
-					intervalStartCheck,
-					startHourSet,
-					widget.NewLabel(LoadLang("intervalHour")),
-					startMinSet,
-					widget.NewLabel(LoadLang("intervalMin")),
-					startSecSet,
-					widget.NewLabel(LoadLang("intervalSec")),
-				)
-				intervalStop := fyne.NewContainerWithLayout(layout.NewGridLayout(7),
-					intervalStopCheck,
-					stopHourSet,
-					widget.NewLabel(LoadLang("intervalHour")),
-					stopMinSet,
-					widget.NewLabel(LoadLang("intervalMin")),
-					stopSecSet,
-					widget.NewLabel(LoadLang("intervalSec")),
-				)
-
-				startHourSet.SetText("00")
-				startMinSet.SetText("00")
-				startSecSet.SetText("00")
-
-				stopHourSet.SetText(fmt.Sprintf("%d", vodHour))
-				stopMinSet.SetText(fmt.Sprintf("%d", vodMinute))
-				stopSecSet.SetText(fmt.Sprintf("%d", vodSecond))
-
-				r, err := regexp.Compile(`\b\d{1,2}\b`)
+				filename, err := os.Open(tempDirectory + `/` + iS + ".ts")
 				ErrHandle(err)
 
-				intervalDone := 0
-				form := &widget.Form{
-					OnSubmit: func() {
-						if !intervalStartCheck.Checked && !intervalStopCheck.Checked {
+				_, err = io.Copy(out, filename)
+				ErrHandle(err)
+			}
+			out.Close()
 
-							intervalCheck.SetChecked(false)
-							return
-						}
+			queueProgStatus[FindElem(queueID, vodID)].SetText("encode")
+			if encoding {
+				r, err := regexp.Compile(`time=(\d\d):(\d\d):(\d\d(\.\d\d)?)`)
+				ErrHandle(err)
 
-						isMatchedStartHour := r.MatchString(startHourSet.Text)
-						isMatchedStartMin := r.MatchString(startMinSet.Text)
-						isMatchedStartSec := r.MatchString(startSecSet.Text)
-						isMatchedStopHour := r.MatchString(stopHourSet.Text)
-						isMatchedStopMin := r.MatchString(stopMinSet.Text)
-						isMatchedStopSec := r.MatchString(stopSecSet.Text)
+				progressBar.SetValue(0)
+				status.SetText(LoadLang("encoding"))
 
-						if !isMatchedStartHour || !isMatchedStartMin || !isMatchedStartSec || !isMatchedStopHour || !isMatchedStopMin || !isMatchedStopSec {
-							dialog.ShowInformation(title, LoadLang("errorLoadTime"), w)
-							intervalCheck.SetChecked(false)
-						} else {
-							ssFFmpeg = fmt.Sprintf("%s:%s:%s", startHourSet.Text, startMinSet.Text, startSecSet.Text)
-							toFFmpeg = fmt.Sprintf("%s:%s:%s", stopHourSet.Text, stopMinSet.Text, stopSecSet.Text)
-						}
+				cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-y", "-i", tempDirectory+`/`+vodID+`.ts`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
 
-						intervalDone = 1
+				stderr, err := cmd.StderrPipe()
+				ErrHandle(err)
 
-						dialog.NewProgressInfinite(title, LoadLang("intervalRangeSaved"), intervalW).Show()
-					},
-				}
-				form.Append(LoadLang("intervalStart"), intervalStart)
-				form.Append(LoadLang("intervalStop"), intervalStop)
+				err = cmd.Start()
+				ErrHandle(err)
 
-				content := widget.NewVBox(
-					widget.NewGroup(LoadLang("tabSetting"),
-						form,
-					),
-				)
+				scanner := bufio.NewScanner(stderr)
+				scanner.Split(bufio.ScanWords)
+				for scanner.Scan() {
+					outputFFmpeg := scanner.Text()
 
-				intervalW.SetOnClosed(func() {
-					progRun.Hide()
-					intervalProg.Hide()
-					return
-				})
+					timeFFmpeg := strings.Split(strings.ReplaceAll(strings.Replace(r.FindString(outputFFmpeg), "time=", "", 1), ":", " "), ".")[0]
 
-				intervalW.SetContent(content)
-				intervalW.Resize(fyne.NewSize(390, 160))
-				intervalW.SetIcon(theme.SettingsIcon())
-				intervalW.SetFixedSize(true)
-				intervalW.CenterOnScreen()
-				intervalW.Show()
+					if len(timeFFmpeg) == 0 {
+						continue
+					}
 
-				for intervalDone == 0 {
-					time.Sleep(time.Second)
+					fmt.Println(timeFFmpeg)
+
+					timeHour, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[0])
+					ErrHandle(err)
+
+					timeMinute, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[1])
+					ErrHandle(err)
+
+					timeSecond, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[2])
+					ErrHandle(err)
+
+					timeSecondsFFmpeg := (timeHour * 3600) + (timeMinute * 60) + timeSecond
+
+					progressBar.SetValue(float64(timeSecondsFFmpeg) / float64(vodTimeInt))
 				}
 
-				intervalW.Close()
-				intervalProg.Hide()
+				err = cmd.Wait()
+				ErrHandle(err)
+			} else {
+				queueProgStatus[FindElem(queueID, vodID)].SetText("move")
+
+				inputFile, err := os.Open(tempDirectory + `/` + vodID + `.ts`)
+				ErrHandle(err)
+
+				outputFile, err := os.Create(downloadPath + `/` + vodID + `.ts`)
+				ErrHandle(err)
+				defer outputFile.Close()
+
+				_, err = io.Copy(outputFile, inputFile)
+				ErrHandle(err)
+
+				err = inputFile.Close()
+				ErrHandle(err)
 			}
 
-			tsInt, err := TsFinder(vodToken)
+		} else if downloadOption == "Single" { // Single Download
+			if intervalCheck.Checked {
+				if !intervalStartCheck.Checked { // 구간 조정
+					ssFFmpeg = "00:00:00"
+				} else if !intervalStopCheck.Checked {
+					h := vodTimeInt / 3600
+					m := (vodTimeInt - (3600 * h)) / 60
+					s := vodTimeInt - (3600 * h) - (m * 60)
 
-			retryCount := 0
+					toFFmpeg = fmt.Sprintf("%d:%d:%d", h, m, s)
+				}
+
+				fmt.Printf("Start Time: %s\nEnd Time: %s\n", ssFFmpeg, toFFmpeg)
+			}
+
+			// M3U8 수정
+			queueProgStatus[FindElem(queueID, vodID)].SetText("loadFile")
+			body, err := JsonParseTwitch("https://api.twitch.tv/kraken/videos/" + vodID)
+
+			retryCount := 1
 
 			for err != nil {
 				retryCount++
 
-				progRun = dialog.NewProgressInfinite(title, fmt.Sprintf("영상 불러오는 중... 재시도 [%d]", retryCount), w)
+				status.SetText(fmt.Sprintf("재시도 중... [%d]", retryCount))
 
 				if retryCount > 5 {
 					dialog.ShowError(fmt.Errorf("해당 영상을 다운받을 수 없습니다"), w)
@@ -1241,245 +1496,122 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 					return
 				}
 
-				tsInt, err = TsFinder(vodToken)
+				body, err = JsonParseTwitch("https://api.twitch.tv/kraken/videos/" + vodID)
 
 				time.Sleep(time.Second)
 			}
 
-			tsI := tsInt - 1
-
-			tempDirectory := dirTemp + "/" + vodID
-
-			err = os.MkdirAll(tempDirectory, 0777)
+			var vod TwitchVOD
+			err = json.Unmarshal(body, &vod)
 			ErrHandle(err)
 
-			ClearDir(tempDirectory)
-
-			var cmd *exec.Cmd                      // 대기열
-			progressBar := widget.NewProgressBar() // 대기열
-
-			status := widget.NewLabel("...") // 대기열
-			status.SetText(LoadLang("waitForDownload"))
-
-			progressStatus := widget.NewEntry() // 대기열
-			progressStatus.SetText("wait")
-
-			progressStatus.OnChanged = func(s string) {
-				if s == "press_stop" {
-					status.SetText(status.Text + " " + LoadLang("canceled"))
-				}
-			}
-
-			AddQueue(vodTitle, vodID, vodTime, vodThumbnail, progressBar, status, progressStatus, cmd)
-
-			keyEntry.SetText("")
-			progRun.Hide()
-			dialog.ShowInformation(title, LoadLang("addedQueue"), w)
-
-			for GetFirstQueue() != vodID {
-				time.Sleep(time.Second)
-			}
-
-			fmt.Printf("남은 공간: %f\n", 100-GetDiskUsage("./"))
-
-			notify.Alert(title, "Notice", "Download Start", dirThumb+"/"+vodID+".jpg")
-
-			if downloadOption == "Multi" { // Multiple Download
-				gState := 0
-				dCycle := 0
-
-				fmt.Println(maxConnection)
-
-				queueProgStatus[FindElem(queueID, vodID)].SetText("download")
-				for i := 0; i <= tsI; i++ {
-					if queueProgStatus[FindElem(queueID, vodID)].Text == "press_stop" {
-						DelQueue(FindElem(queueID, vodID))
-						return
-					}
-
-					tsURL := "http://vod-secure.twitch.tv/" + vodToken + "/"
-
-					iS := strconv.Itoa(i)
-
-					filename := tempDirectory + `/` + iS + ".ts"
-
-					wg.Add(1)
-					go func(n int) {
-						err = DownloadFile(filename, tsURL, iS)
-						ErrHandle(err)
-
-						c.Increment()
-						wg.Done()
-					}(i)
-
-					if i != 0 {
-						if maxConnection > tsI {
-							continue
-						}
-
-						if i%maxConnection == 0 {
-							dCycle++
-							for gState < dCycle*maxConnection {
-								if queueProgStatus[FindElem(queueID, vodID)].Text == "press_stop" {
-									DelQueue(FindElem(queueID, vodID))
-									return
-								}
-
-								gState := c.i
-
-								if gState == 0 {
-									status.SetText(LoadLang("waitForDownload"))
-								} else {
-									if gState == (dCycle-1)*maxConnection {
-										status.SetText(LoadLang("addQueue"))
-									} else {
-										status.SetText(LoadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
-										progressBar.SetValue(float64(gState) / float64(tsI))
-										fmt.Printf("%d | %d\n", gState, tsI)
-									}
-									if gState >= dCycle*maxConnection {
-										break
-									}
-								}
-								time.Sleep(time.Second)
-							}
-						}
-					}
-				}
-
-				for gState < tsI {
-					if queueProgStatus[FindElem(queueID, vodID)].Text == "press_stop" {
-						DelQueue(FindElem(queueID, vodID))
-						return
-					}
-
-					gState := c.i
-
-					if gState < 1 {
-						status.SetText(LoadLang("waitForDownload"))
-						time.Sleep(time.Second)
-						fmt.Printf("%d | %d\n", gState, tsI)
-					} else {
-						status.SetText(LoadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
-						progressBar.SetValue(float64(gState) / float64(tsI))
-						fmt.Printf("%d | %d\n", gState, tsI)
-						if gState >= tsI {
-							break
-						}
-					}
-
-					time.Sleep(time.Second)
-				}
-
-				queueProgStatus[FindElem(queueID, vodID)].SetText("wait_incomplete_download")
-				status.SetText(LoadLang("waitIncompleteDownload"))
-				wg.Wait()
-
-				status.SetText(LoadLang("generateFile"))
-				out, err := os.OpenFile(tempDirectory+`/`+vodID+`.ts`, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+			if vodType == "highlight" {
+				Download(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+vodID+".m3u8")
 				ErrHandle(err)
+			} else {
+				Download(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
+				ErrHandle(err)
+			}
 
-				queueProgStatus[FindElem(queueID, vodID)].SetText("merge")
-				for i := 0; i <= tsI; i++ {
-					if queueProgStatus[FindElem(queueID, vodID)].Text == "press_stop" {
-						DelQueue(FindElem(queueID, vodID))
-						return
-					}
+			indexDVRFile, err := os.OpenFile(tempDirectory+`/index-dvr_fixed.m3u8`, os.O_CREATE|os.O_RDWR|os.O_APPEND, os.FileMode(0777))
+			ErrHandle(err)
 
-					iS := strconv.Itoa(i)
+			indexDVRFileOrg, err := os.Open(tempDirectory + `/index-dvr.m3u8`)
+			ErrHandle(err)
+			defer indexDVRFileOrg.Close()
 
-					status.SetText(LoadLang("merging") + " " + strconv.FormatFloat(percent.PercentOf(i, tsI), 'f', 2, 64) + "%")
-					progressBar.SetValue(float64(i) / float64(tsI))
+			indexDVROrg := bufio.NewScanner(indexDVRFileOrg)
 
-					filename, err := os.Open(tempDirectory + `/` + iS + ".ts")
-					ErrHandle(err)
-
-					_, err = io.Copy(out, filename)
-					ErrHandle(err)
-				}
-				out.Close()
-
-				queueProgStatus[FindElem(queueID, vodID)].SetText("encode")
-				if encoding {
-					r, err := regexp.Compile(`time=(\d\d):(\d\d):(\d\d(\.\d\d)?)`)
-					ErrHandle(err)
-
-					progressBar.SetValue(0)
-					status.SetText(LoadLang("encoding"))
-
-					cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-y", "-i", tempDirectory+`/`+vodID+`.ts`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
-
-					stderr, err := cmd.StderrPipe()
-					ErrHandle(err)
-
-					err = cmd.Start()
-					ErrHandle(err)
-
-					scanner := bufio.NewScanner(stderr)
-					scanner.Split(bufio.ScanWords)
-					for scanner.Scan() {
-						outputFFmpeg := scanner.Text()
-
-						timeFFmpeg := strings.Split(strings.ReplaceAll(strings.Replace(r.FindString(outputFFmpeg), "time=", "", 1), ":", " "), ".")[0]
-
-						if len(timeFFmpeg) == 0 {
-							continue
-						}
-
-						fmt.Println(timeFFmpeg)
-
-						timeHour, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[0])
-						ErrHandle(err)
-
-						timeMinute, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[1])
-						ErrHandle(err)
-
-						timeSecond, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[2])
-						ErrHandle(err)
-
-						timeSecondsFFmpeg := (timeHour * 3600) + (timeMinute * 60) + timeSecond
-
-						progressBar.SetValue(float64(timeSecondsFFmpeg) / float64(vodTimeInt))
-					}
-
-					err = cmd.Wait()
+			indexNum := 0
+			mutedNum := 0
+			mutedTotal := len(vod.MutedSegments) - 1
+			for indexDVROrg.Scan() {
+				if indexDVROrg.Text()[0:1] == "#" {
+					_, err = indexDVRFile.WriteString(indexDVROrg.Text() + "\n")
 					ErrHandle(err)
 				} else {
-					queueProgStatus[FindElem(queueID, vodID)].SetText("move")
+					progressBar.SetValue(float64(indexNum) / float64(tsI))
 
-					inputFile, err := os.Open(tempDirectory + `/` + vodID + `.ts`)
-					ErrHandle(err)
+					if mutedNum <= mutedTotal {
+						mutedDuration := vod.MutedSegments[mutedNum].Duration
+						mutedOffset := vod.MutedSegments[mutedNum].Offset
 
-					outputFile, err := os.Create(downloadPath + `/` + vodID + `.ts`)
-					ErrHandle(err)
-					defer outputFile.Close()
+						if (mutedOffset/10) <= indexNum && (mutedOffset/10)+(mutedDuration/10) > indexNum {
+							_, err = indexDVRFile.WriteString("https://vod-secure.twitch.tv/" + vodToken + "/chunked/" + strings.Replace(indexDVROrg.Text(), ".ts", "-muted.ts", 1) + "\n")
+							ErrHandle(err)
 
-					_, err = io.Copy(outputFile, inputFile)
-					ErrHandle(err)
-
-					err = inputFile.Close()
-					ErrHandle(err)
-				}
-
-			} else if downloadOption == "Single" { // Single Download
-				if intervalCheck.Checked {
-					if !intervalStartCheck.Checked { // 구간 조정
-						ssFFmpeg = "00:00:00"
-					} else if !intervalStopCheck.Checked {
-						h := vodTimeInt / 3600
-						m := (vodTimeInt - (3600 * h)) / 60
-						s := vodTimeInt - (3600 * h) - (m * 60)
-
-						toFFmpeg = fmt.Sprintf("%d:%d:%d", h, m, s)
+							if (mutedOffset/10)+((mutedDuration/10)-1) == indexNum {
+								mutedNum++
+							}
+							indexNum++
+							continue
+						}
 					}
 
-					fmt.Printf("Start Time: %s\nEnd Time: %s\n", ssFFmpeg, toFFmpeg)
+					_, err = indexDVRFile.WriteString("https://vod-secure.twitch.tv/" + vodToken + "/chunked/" + indexDVROrg.Text() + "\n")
+					ErrHandle(err)
+
+					indexNum++
+				}
+			}
+			// 끝
+
+			queueProgStatus[FindElem(queueID, vodID)].SetText("encode")
+			progressBar.SetValue(0)
+			if encoding {
+				queueProgStatus[FindElem(queueID, vodID)].SetText("downloadAndEncode")
+
+				r, err := regexp.Compile("[0-9]+.ts")
+				ErrHandle(err)
+
+				if intervalCheck.Checked {
+					fmt.Println("Interval: " + ssFFmpeg + " ~ " + toFFmpeg)
+
+					cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-ss", ssFFmpeg, "-to", toFFmpeg, "-i", tempDirectory+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
+				} else {
+					cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-i", tempDirectory+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
 				}
 
-				// M3U8 수정
-				queueProgStatus[FindElem(queueID, vodID)].SetText("loadFile")
-				body, err := JsonParseTwitch("https://api.twitch.tv/kraken/videos/" + vodID)
+				stderr, err := cmd.StderrPipe()
+				ErrHandle(err)
 
+				err = cmd.Start()
+				ErrHandle(err)
+
+				scanner := bufio.NewScanner(stderr)
+				scanner.Split(bufio.ScanLines)
+				for scanner.Scan() {
+					outputFFmpeg := scanner.Text()
+
+					statusFFmpeg := strings.Replace(r.FindString(outputFFmpeg), ".ts", "", 1)
+
+					numFFmpeg, err := strconv.Atoi(statusFFmpeg)
+					if err != nil {
+						continue
+					}
+
+					status.SetText(LoadLang("downloadAndEncode"))
+					progressBar.SetValue(float64(numFFmpeg) / float64(tsI))
+				}
+
+				err = cmd.Wait()
+				ErrHandle(err)
+			}
+		} else if downloadOption == "Recording" { // 녹화
+			tsNum := 0
+			errorNum := 0
+			r, err := regexp.Compile(`Duration: (\d\d):(\d\d):(\d\d)`)
+			ErrHandle(err)
+
+			out, err := os.OpenFile(tempDirectory+`/`+vodID+`.ts`, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+			ErrHandle(err)
+
+			queueProgStatus[FindElem(queueID, vodID)].SetText("recording")
+			for {
+				tsNumStr := strconv.Itoa(tsNum)
+				filename := tempDirectory + `/` + tsNumStr + `.ts`
+
+				recStatus, err := RecordFile(filename, "http://vod-secure.twitch.tv/"+vodToken+"/", tsNumStr)
 				retryCount := 1
 
 				for err != nil {
@@ -1493,302 +1625,145 @@ func DownloadHome(w fyne.Window) fyne.CanvasObject { // 홈
 						return
 					}
 
-					body, err = JsonParseTwitch("https://api.twitch.tv/kraken/videos/" + vodID)
+					recStatus, err = RecordFile(filename, "http://vod-secure.twitch.tv/"+vodToken+"/", tsNumStr)
 
 					time.Sleep(time.Second)
 				}
 
-				var vod TwitchVOD
-				err = json.Unmarshal(body, &vod)
-				ErrHandle(err)
+				if recStatus == "error" { // 에러
+					if errorNum >= 3 {
+						break
+					}
 
-				if vodType == "highlight" {
-					Download(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+vodID+".m3u8")
-					ErrHandle(err)
-				} else {
-					Download(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
-					ErrHandle(err)
+					time.Sleep(15 * time.Second)
+					errorNum++
+					continue
 				}
 
-				indexDVRFile, err := os.OpenFile(tempDirectory+`/index-dvr_fixed.m3u8`, os.O_CREATE|os.O_RDWR|os.O_APPEND, os.FileMode(0777))
+				// 병합
+				orgFile, err := os.Open(filename)
 				ErrHandle(err)
 
-				indexDVRFileOrg, err := os.Open(tempDirectory + `/index-dvr.m3u8`)
-				ErrHandle(err)
-				defer indexDVRFileOrg.Close()
-
-				indexDVROrg := bufio.NewScanner(indexDVRFileOrg)
-
-				indexNum := 0
-				mutedNum := 0
-				mutedTotal := len(vod.MutedSegments) - 1
-				for indexDVROrg.Scan() {
-					if indexDVROrg.Text()[0:1] == "#" {
-						_, err = indexDVRFile.WriteString(indexDVROrg.Text() + "\n")
-						ErrHandle(err)
-					} else {
-						progressBar.SetValue(float64(indexNum) / float64(tsI))
-
-						if mutedNum <= mutedTotal {
-							mutedDuration := vod.MutedSegments[mutedNum].Duration
-							mutedOffset := vod.MutedSegments[mutedNum].Offset
-
-							if (mutedOffset/10) <= indexNum && (mutedOffset/10)+(mutedDuration/10) > indexNum {
-								_, err = indexDVRFile.WriteString("https://vod-secure.twitch.tv/" + vodToken + "/chunked/" + strings.Replace(indexDVROrg.Text(), ".ts", "-muted.ts", 1) + "\n")
-								ErrHandle(err)
-
-								if (mutedOffset/10)+((mutedDuration/10)-1) == indexNum {
-									mutedNum++
-								}
-								indexNum++
-								continue
-							}
-						}
-
-						_, err = indexDVRFile.WriteString("https://vod-secure.twitch.tv/" + vodToken + "/chunked/" + indexDVROrg.Text() + "\n")
-						ErrHandle(err)
-
-						indexNum++
-					}
-				}
-				// 끝
-
-				queueProgStatus[FindElem(queueID, vodID)].SetText("encode")
-				progressBar.SetValue(0)
-				if encoding {
-					queueProgStatus[FindElem(queueID, vodID)].SetText("downloadAndEncode")
-
-					r, err := regexp.Compile("[0-9]+.ts")
-					ErrHandle(err)
-
-					if intervalCheck.Checked {
-						fmt.Println("Interval: " + ssFFmpeg + " ~ " + toFFmpeg)
-
-						cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-ss", ssFFmpeg, "-to", toFFmpeg, "-i", tempDirectory+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
-					} else {
-						cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-i", tempDirectory+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
-					}
-
-					stderr, err := cmd.StderrPipe()
-					ErrHandle(err)
-
-					err = cmd.Start()
-					ErrHandle(err)
-
-					scanner := bufio.NewScanner(stderr)
-					scanner.Split(bufio.ScanLines)
-					for scanner.Scan() {
-						outputFFmpeg := scanner.Text()
-
-						statusFFmpeg := strings.Replace(r.FindString(outputFFmpeg), ".ts", "", 1)
-
-						numFFmpeg, err := strconv.Atoi(statusFFmpeg)
-						if err != nil {
-							continue
-						}
-
-						status.SetText(LoadLang("downloadAndEncode"))
-						progressBar.SetValue(float64(numFFmpeg) / float64(tsI))
-					}
-
-					err = cmd.Wait()
-					ErrHandle(err)
-				}
-			} else if downloadOption == "Recording" { // 녹화
-				tsNum := 0
-				errorNum := 0
-				r, err := regexp.Compile(`Duration: (\d\d):(\d\d):(\d\d)`)
+				_, err = io.Copy(out, orgFile)
 				ErrHandle(err)
 
-				out, err := os.OpenFile(tempDirectory+`/`+vodID+`.ts`, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+				err = os.Remove(filename)
 				ErrHandle(err)
 
-				queueProgStatus[FindElem(queueID, vodID)].SetText("recording")
-				for {
-					tsNumStr := strconv.Itoa(tsNum)
-					filename := tempDirectory + `/` + tsNumStr + `.ts`
+				cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-i", tempDirectory+`/`+vodID+`.ts`))
 
-					recStatus, err := RecordFile(filename, "http://vod-secure.twitch.tv/"+vodToken+"/", tsNumStr)
-					retryCount := 1
+				stderr, err := cmd.StderrPipe()
+				ErrHandle(err)
 
-					for err != nil {
-						retryCount++
+				err = cmd.Start()
+				ErrHandle(err)
 
-						status.SetText(fmt.Sprintf("재시도 중... [%d]", retryCount))
+				scanner := bufio.NewScanner(stderr)
+				scanner.Split(bufio.ScanLines)
+				for scanner.Scan() {
+					outputFFmpeg := scanner.Text()
 
-						if retryCount > 5 {
-							dialog.ShowError(fmt.Errorf("해당 영상을 다운받을 수 없습니다"), w)
+					fmt.Println(outputFFmpeg)
 
-							return
-						}
+					timeFFmpeg := strings.ReplaceAll(strings.Replace(r.FindString(outputFFmpeg), "Duration: ", "", 1), ":", " ")
 
-						recStatus, err = RecordFile(filename, "http://vod-secure.twitch.tv/"+vodToken+"/", tsNumStr)
-
-						time.Sleep(time.Second)
-					}
-
-					if recStatus == "error" { // 에러
-						if errorNum >= 3 {
-							break
-						}
-
-						time.Sleep(15 * time.Second)
-						errorNum++
+					if len(timeFFmpeg) == 0 {
 						continue
 					}
 
-					// 병합
-					orgFile, err := os.Open(filename)
-					ErrHandle(err)
+					timeHour := strings.Split(timeFFmpeg, " ")[0]
+					timeMinute := strings.Split(timeFFmpeg, " ")[1]
+					timeSecond := strings.Split(timeFFmpeg, " ")[2]
 
-					_, err = io.Copy(out, orgFile)
-					ErrHandle(err)
-
-					err = os.Remove(filename)
-					ErrHandle(err)
-
-					cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-i", tempDirectory+`/`+vodID+`.ts`))
-
-					stderr, err := cmd.StderrPipe()
-					ErrHandle(err)
-
-					err = cmd.Start()
-					ErrHandle(err)
-
-					scanner := bufio.NewScanner(stderr)
-					scanner.Split(bufio.ScanLines)
-					for scanner.Scan() {
-						outputFFmpeg := scanner.Text()
-
-						fmt.Println(outputFFmpeg)
-
-						timeFFmpeg := strings.ReplaceAll(strings.Replace(r.FindString(outputFFmpeg), "Duration: ", "", 1), ":", " ")
-
-						if len(timeFFmpeg) == 0 {
-							continue
-						}
-
-						timeHour := strings.Split(timeFFmpeg, " ")[0]
-						timeMinute := strings.Split(timeFFmpeg, " ")[1]
-						timeSecond := strings.Split(timeFFmpeg, " ")[2]
-
-						status.SetText(LoadLang("recording") + " | " + timeHour + " h " + timeMinute + "m " + timeSecond + "s | " + tsNumStr)
-					}
-					err = cmd.Wait()
-					ErrHandle(err)
-
-					tsNum++
+					status.SetText(LoadLang("recording") + " | " + timeHour + " h " + timeMinute + "m " + timeSecond + "s | " + tsNumStr)
 				}
-				out.Close()
+				err = cmd.Wait()
+				ErrHandle(err)
 
-				// 인코딩
-				if encoding {
-					r, err := regexp.Compile(`time=(\d\d):(\d\d):(\d\d(\.\d\d)?)`)
-					ErrHandle(err)
-
-					progressBar.SetValue(0)
-					queueProgStatus[FindElem(queueID, vodID)].SetText("encode")
-
-					cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-y", "-i", tempDirectory+`/`+vodID+`.ts`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
-
-					stderr, err := cmd.StderrPipe()
-					ErrHandle(err)
-
-					err = cmd.Start()
-					ErrHandle(err)
-
-					scanner := bufio.NewScanner(stderr)
-					scanner.Split(bufio.ScanWords)
-					for scanner.Scan() {
-						outputFFmpeg := scanner.Text()
-
-						timeFFmpeg := strings.ReplaceAll(strings.Replace(r.FindString(outputFFmpeg), "time=", "", 1), ":", " ")
-
-						if len(timeFFmpeg) == 0 {
-							continue
-						}
-
-						timeHour, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[0])
-						ErrHandle(err)
-
-						timeMinute, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[1])
-						ErrHandle(err)
-
-						timeSecond, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[2])
-						ErrHandle(err)
-
-						timeSecondsFFmpeg := (timeHour * 3600) + (timeMinute * 60) + timeSecond
-
-						progressBar.SetValue(float64(timeSecondsFFmpeg) / float64(vodTimeInt))
-					}
-
-					err = cmd.Wait()
-					ErrHandle(err)
-				} else {
-					inputFile, err := os.Open(tempDirectory + `/` + vodID + `.ts`)
-					ErrHandle(err)
-
-					outputFile, err := os.Create(downloadPath + `/` + vodID + `.ts`)
-					ErrHandle(err)
-					defer outputFile.Close()
-
-					_, err = io.Copy(outputFile, inputFile)
-					ErrHandle(err)
-
-					err = inputFile.Close()
-					ErrHandle(err)
-				}
+				tsNum++
 			}
+			out.Close()
 
-			progressBar.SetValue(1)
-			notify.Alert(title, "Notice", "Download Complete", dirThumb+"/"+vodID+".jpg")
+			// 인코딩
+			if encoding {
+				r, err := regexp.Compile(`time=(\d\d):(\d\d):(\d\d(\.\d\d)?)`)
+				ErrHandle(err)
 
-			fmt.Println(FindElem(queueID, vodID))
-			DelQueue(FindElem(queueID, vodID))
+				progressBar.SetValue(0)
+				queueProgStatus[FindElem(queueID, vodID)].SetText("encode")
 
-			ClearDir(tempDirectory)
+				cmd = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-y", "-i", tempDirectory+`/`+vodID+`.ts`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
 
-			status.SetText(LoadLang("downloadComplete"))
+				stderr, err := cmd.StderrPipe()
+				ErrHandle(err)
 
-			OpenURL(downloadPath)
-		}()
-	})
+				err = cmd.Start()
+				ErrHandle(err)
 
-	queueButton := widget.NewButtonWithIcon("", theme.MailSendIcon(), func() {
-		moreInfoW := a.NewWindow(title)
+				scanner := bufio.NewScanner(stderr)
+				scanner.Split(bufio.ScanWords)
+				for scanner.Scan() {
+					outputFFmpeg := scanner.Text()
 
-		moreInfoW.SetContent(MoreView(moreInfoW))
-		moreInfoW.Resize(fyne.NewSize(500, 400))
-		moreInfoW.SetFixedSize(true)
-		moreInfoW.CenterOnScreen()
-		moreInfoW.Show()
-	})
+					timeFFmpeg := strings.ReplaceAll(strings.Replace(r.FindString(outputFFmpeg), "time=", "", 1), ":", " ")
 
-	buttonBox := widget.NewHBox(
-		layout.NewSpacer(),
-		queueButton,
-		button,
-	)
+					if len(timeFFmpeg) == 0 {
+						continue
+					}
 
-	intervalBox := widget.NewHBox(
-		intervalCheck,
-		layout.NewSpacer(),
-	)
+					timeHour, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[0])
+					ErrHandle(err)
 
-	searchBox := widget.NewVBox(
-		keyEntry,    // 주소 입력
-		buttonBox,   // 다운로드 버튼
-		intervalBox, // 구간 다운로드 버튼
-	)
+					timeMinute, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[1])
+					ErrHandle(err)
 
-	homeLayoutBox := widget.NewVBox(
-		layout.NewSpacer(),
-		layout.NewSpacer(),
-		searchBox,
-		layout.NewSpacer(),
-	)
+					timeSecond, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[2])
+					ErrHandle(err)
 
-	return homeLayoutBox
+					timeSecondsFFmpeg := (timeHour * 3600) + (timeMinute * 60) + timeSecond
+
+					progressBar.SetValue(float64(timeSecondsFFmpeg) / float64(vodTimeInt))
+				}
+
+				err = cmd.Wait()
+				ErrHandle(err)
+			} else {
+				inputFile, err := os.Open(tempDirectory + `/` + vodID + `.ts`)
+				ErrHandle(err)
+
+				outputFile, err := os.Create(downloadPath + `/` + vodID + `.ts`)
+				ErrHandle(err)
+				defer outputFile.Close()
+
+				_, err = io.Copy(outputFile, inputFile)
+				ErrHandle(err)
+
+				err = inputFile.Close()
+				ErrHandle(err)
+			}
+		}
+
+		progressBar.SetValue(1)
+		_ = beeep.Alert(title, "Download Complete", dirThumb+"/"+vodID+".jpg")
+
+		fmt.Println(FindElem(queueID, vodID))
+		DelQueue(FindElem(queueID, vodID))
+
+		ClearDir(tempDirectory)
+
+		status.SetText(LoadLang("downloadComplete"))
+
+		OpenURL(downloadPath)
+	}()
+}
+
+func (e *enterEntry) KeyDown(key *fyne.KeyEvent) {
+	switch key.Name {
+	case fyne.KeyReturn:
+		e.onEnter()
+	default:
+		e.Entry.KeyDown(key)
+	}
 }
 
 //Advanced 설정
@@ -1957,126 +1932,68 @@ func DelQueue(i int) {
 }
 
 //MoreView 대기열 창
-func MoreView(moreInfoW fyne.Window) *widget.ScrollContainer {
+func MoreView() (*widget.Group, *widget.ScrollContainer) {
 	defer Recover() // 복구
+
+	keyEntry = &enterEntry{}
+	keyEntry.ExtendBaseWidget(keyEntry)
+	keyEntry.SetPlaceHolder(LoadLang("keyEntryHolder"))
+
+	keyEntry.OnChanged = func(s string) {
+		if s == "errortest" {
+			ErrHandle(fmt.Errorf("%s", "Error Test\n에러 테스트"))
+			keyEntry.SetText("recovered")
+		}
+
+		if len(s) > 40 {
+			dialog.ShowInformation(title, LoadLang("invalidCode"), w)
+			keyEntry.SetText("")
+		}
+	}
+	intervalCheck = widget.NewCheck(LoadLang("intervalDownload"), func(c bool) {})
+	intervalCheck.Show()
+
+	// 클립보드 자동 감지
+	checkClipboard = false
+	beforeClipboard := ""
+
+	go func() {
+		for {
+			if checkClipboard {
+				clpStatus, clp := KeyCheckRealTime(w.Clipboard().Content())
+
+				if clpStatus {
+					if beforeClipboard == clp {
+						time.Sleep(time.Second)
+						continue
+					}
+
+					ok := dialog.NewConfirm(title, LoadLang("codeFound")+clp, func(res bool) {
+						if res {
+							beforeClipboard = clp
+							keyEntry.SetText(clp)
+						} else {
+							beforeClipboard = clp
+						}
+					}, w)
+
+					ok.SetConfirmText(LoadLang("confirm"))
+					ok.SetDismissText(LoadLang("dismiss"))
+					ok.Show()
+				}
+			}
+			time.Sleep(time.Second)
+
+		}
+	}()
 
 	queue := widget.NewGroup("대기열")
 
-	fmt.Println(queueID)
-	fmt.Println(len(queueID))
-	fmt.Println(queueTitle)
-	fmt.Println(queueTime)
-	fmt.Println(queueThumb)
-
-	if len(queueID) != 0 {
-		for i := range queueID {
-			fmt.Println("--- 대기열 로드")
-			fmt.Println("Title: " + queueTitle[i])
-			fmt.Println("Time: " + queueTime[i])
-			fmt.Println("Thumbnail: " + queueThumb[i])
-
-			queueVODID := queueID[i]
-
-			queueTimeInt, err := strconv.Atoi(queueTime[i])
-			ErrHandle(err)
-
-			var stopButton *widget.Button
-			stopButton = widget.NewButtonWithIcon(LoadLang("cancel"), theme.CancelIcon(), func() {
-				stopProg := dialog.NewProgressInfinite(title, "진행 중지를 기다리는 중...", moreInfoW)
-				stopProg.Show()
-
-				switch queueProgStatus[i].Text {
-				case "wait":
-					stopProg.Hide()
-					dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), moreInfoW)
-				case "download":
-					queueProgStatus[i].SetText("press_stop")
-
-					for {
-						if !ContainsElem(queueID, queueVODID) {
-							break
-						}
-
-						time.Sleep(time.Second)
-					}
-
-					stopProg.Hide()
-					dialog.ShowInformation(title, LoadLang("stoppedDownload"), moreInfoW)
-					notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
-				case "merge":
-					queueProgStatus[i].SetText("press_stop")
-
-					for {
-						if !ContainsElem(queueID, queueVODID) {
-							break
-						}
-
-						time.Sleep(time.Second)
-					}
-
-					stopProg.Hide()
-					dialog.ShowInformation(title, LoadLang("stoppedDownload"), moreInfoW)
-					notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
-				case "move":
-					queueProgStatus[i].SetText("press_stop")
-
-					for {
-						if !ContainsElem(queueID, queueVODID) {
-							break
-						}
-
-						time.Sleep(time.Second)
-					}
-
-					stopProg.Hide()
-					dialog.ShowInformation(title, LoadLang("stoppedDownload"), moreInfoW)
-					notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
-				case "encode":
-					stopProg.Hide()
-					dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), moreInfoW)
-				case "wait_incomplete_download":
-					stopProg.Hide()
-					dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), moreInfoW)
-				}
-
-				canvas.Refresh(moreInfoW.Content())
-				stopButton.Disable()
-			})
-
-			if queueProgStatus[i].Text == "encode" {
-				stopButton.Disable()
-			}
-
-			h := queueTimeInt / 3600
-			m := (queueTimeInt - (3600 * h)) / 60
-			s := queueTimeInt - (3600 * h) - (m * 60)
-
-			moreViewForm := widget.NewVBox(
-				widget.NewLabel(fmt.Sprintf("%s: %s", LoadLang("vodTitle"), queueTitle[i])),
-				widget.NewLabel(fmt.Sprintf("%s: %d시간 %d분 %d초", LoadLang("vodTime"), h, m, s)),
-				widget.NewHBox(queueStatus[i], layout.NewSpacer(), stopButton),
-			)
-
-			vodThumbnailImg := &canvas.Image{
-				File:     queueThumb[i],
-				FillMode: canvas.ImageFillOriginal,
-			}
-			canvas.Refresh(vodThumbnailImg)
-
-			queueInfo := fyne.NewContainerWithLayout(
-				layout.NewHBoxLayout(), vodThumbnailImg, moreViewForm,
-			)
-
-			queueLayout := widget.NewVBox(
-				queueInfo,
-				queueProgress[i],
-			)
-
-			queue.Append(queueLayout)
-		}
-	} else {
-		queue.Append(widget.NewLabelWithStyle(LoadLang("noQueue"), fyne.TextAlignCenter, fyne.TextStyle{Bold: false}))
-	}
-
-	return widget.NewScrollContainer(queue)
+	return queue, widget.NewVScrollContainer(
+		widget.NewVBox(
+			queue,
+			layout.NewSpacer(),
+			keyEntry,
+		),
+	)
 }

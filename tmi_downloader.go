@@ -10,32 +10,37 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
+
+	"github.com/gen2brain/beeep"
 
 	"fyne.io/fyne"
 	"fyne.io/fyne/app"
 	"fyne.io/fyne/canvas"
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/driver/desktop"
+	"fyne.io/fyne/layout"
+	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
 
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/gofrs/uuid"
+	"github.com/martinlindhe/notify"
 	"github.com/nicklaw5/helix"
 	"github.com/zserge/lorca"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/twitch"
 )
 
-// TODO: 커스텀 Scheme -> transfer exe -> POST localhost:7001 (data: type=add_queue&title=타이틀&time=시간&&thumb=썸네일 URL) -> TMI Downloader 대기열 추가
-
 func main() { // 메인
-	var updateFlag, resetFlag, httpMode bool
+	var updateFlag, resetFlag, httpMode, bgMode bool
 	var loginFlag string
 
 	flag.BoolVar(&updateFlag, "update", true, "업데이트 확인")
 	flag.BoolVar(&resetFlag, "reset", false, "초기화")
 	flag.BoolVar(&httpMode, "scheme", false, "scheme 모드")
+	flag.BoolVar(&bgMode, "bg", false, "백그라운드 모드")
 
 	flag.StringVar(&loginFlag, "login", "online", "로그인 모드")
 
@@ -49,11 +54,17 @@ func main() { // 메인
 		schemeParsed, _ := url.Parse(schemeArgs)
 		schemeRawQuery, _ := url.ParseQuery(schemeParsed.RawQuery)
 
-		schemeTitle := schemeRawQuery["title"][0]
-		schemeTime := schemeRawQuery["time"][0]
-		schemeThumb := schemeRawQuery["thumb"][0]
+		schemeURL := schemeRawQuery["url"][0]
 
-		SchemeAddQueue(schemeTitle, schemeTime, schemeThumb)
+		SchemeAddQueue(schemeURL)
+
+		return
+	}
+
+	if CheckStatus() {
+		fmt.Println("실행 중")
+
+		ShowWindow(true)
 
 		return
 	}
@@ -126,11 +137,6 @@ func main() { // 메인
 	splWindow.SetFixedSize(true)
 	splWindow.CenterOnScreen()
 
-	w = a.NewWindow(title)
-	w.CenterOnScreen()
-	w.SetFixedSize(true)
-	w.SetIcon(appInfo.icon)
-
 	if loginFlag == "offline" {
 		title = "TMI Downloader Offline Mode"
 	}
@@ -145,29 +151,6 @@ func main() { // 메인
 	ErrHandle(err)
 
 	fmt.Println("언어: " + LoadLang("lang"))
-
-	//w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) { // 키 이벤트
-	//	if k.Name == fyne.KeyQ { // q 눌러서 종료
-	//
-	//	}
-	//})
-
-	w.SetOnClosed(func() { // 강제 종료
-		if len(queueCmd) != 0 {
-			fmt.Println("Quit: Forced")
-			for _, cmdProgress := range queueCmd {
-				err = cmdProgress.Process.Kill()
-				ErrHandle(err)
-			}
-		}
-
-		ClearDir(dirTemp)
-
-		os.Exit(0)
-	})
-
-	w.SetTitle(title)
-	w.SetContent(DownloadHome(w))
 
 	go func() {
 		_, noFFmpeg := os.Stat(dirBin + "/" + ffmpegBinary)
@@ -345,6 +328,251 @@ func main() { // 메인
 			SendLoginInfo(twitchUserID, twitchDisplayName, twitchUserName, twitchRefreshToken, twitchAccessToken, twitchUserEmail)
 		}
 
+		noticeItem := fyne.NewMenuItem(LoadLang("menuInNotice"), func() {
+			go func() {
+				if chromeStatus {
+					ui, err := lorca.New("https://notice.tmi.tips/TDownloader/", "", 800, 600)
+					ErrHandle(err)
+					defer ui.Close()
+
+					<-ui.Done()
+				} else {
+					OpenURL("https://notice.tmi.tips/TDownloader/")
+				}
+			}()
+		})
+
+		licenseItem := fyne.NewMenuItem(LoadLang("menuInLicense"), func() {
+			go func() {
+				if chromeStatus {
+					ui, err := lorca.New("https://notice.tmi.tips/License/", "", 800, 600)
+					ErrHandle(err)
+					defer ui.Close()
+
+					<-ui.Done()
+				} else {
+					OpenURL("https://notice.tmi.tips/License/")
+				}
+			}()
+		})
+
+		installReqItem := fyne.NewMenuItem(LoadLang("installRequireFile"), func() {
+			go func() {
+				prog := dialog.NewProgress(title, LoadLang("downloadNecessary"), w)
+				prog.SetValue(0.5)
+				prog.Show()
+
+				Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
+				ErrHandle(err)
+
+				r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
+				ErrHandle(err)
+				defer r.Close()
+
+				err = Untar(dirBin, r)
+				ErrHandle(err)
+
+				prog.Hide()
+
+				dialog.ShowInformation(title, LoadLang("downloadComplete"), w)
+			}()
+		})
+
+		settingItem := fyne.NewMenuItem(LoadLang("tabSetting"), func() {
+			go func() {
+				showSettingDiag := dialog.NewProgressInfinite(title, LoadLang("editSettingNow"), w)
+				showSettingDiag.Show()
+
+				w2 := a.NewWindow(title)
+
+				w2.SetOnClosed(func() {
+					showSettingDiag.Hide()
+				})
+
+				object := Advanced(w2)
+
+				w2.SetContent(object)
+				w2.Resize(fyne.NewSize(430, 350))
+				w2.SetFixedSize(true)
+				w2.CenterOnScreen()
+				w2.Show()
+			}()
+		})
+
+		logoutItem := fyne.NewMenuItem(LoadLang("logout"), func() {
+			a.Preferences().SetString("twitchRefreshToken", "error")
+
+			fmt.Println(a.Preferences().String("twitchRefreshToken"))
+
+			RunAgain()
+		})
+
+		mainMenu := fyne.NewMainMenu(
+			fyne.NewMenu(LoadLang("menuInfo"), noticeItem, licenseItem),
+			fyne.NewMenu(LoadLang("menuMore"), installReqItem, settingItem),
+			fyne.NewMenu(twitchDisplayName+LoadLang("hello"), logoutItem),
+		)
+
+		queue, mainContent := MoreView()
+
+		go func() {
+			preQueueID := queueID
+			for {
+				if len(preQueueID) != len(queueID) {
+					fmt.Println("대기열 초기화")
+
+					preQueueID = queueID
+				} else {
+					time.Sleep(500 * time.Millisecond)
+
+					continue
+				}
+
+				if len(queueID) != 0 {
+					for i := range queueID {
+						fmt.Println("--- 대기열 로드")
+						fmt.Println("Title: " + queueTitle[i])
+						fmt.Println("Time: " + queueTime[i])
+						fmt.Println("Thumbnail: " + queueThumb[i])
+
+						queueVODID := queueID[i]
+
+						queueTimeInt, err := strconv.Atoi(queueTime[i])
+						ErrHandle(err)
+
+						var stopButton *widget.Button
+
+						stopButton = widget.NewButtonWithIcon(LoadLang("cancel"), theme.CancelIcon(), func() {
+							stopProg := dialog.NewProgressInfinite(title, "진행 중지를 기다리는 중...", w)
+							stopProg.Show()
+
+							switch queueProgStatus[i].Text {
+							case "wait":
+								stopProg.Hide()
+								dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), w)
+							case "download":
+								queueProgStatus[i].SetText("press_stop")
+
+								for {
+									if !ContainsElem(queueID, queueVODID) {
+										break
+									}
+
+									time.Sleep(time.Second)
+								}
+
+								stopProg.Hide()
+								dialog.ShowInformation(title, LoadLang("stoppedDownload"), w)
+								notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
+							case "merge":
+								queueProgStatus[i].SetText("press_stop")
+
+								for {
+									if !ContainsElem(queueID, queueVODID) {
+										break
+									}
+
+									time.Sleep(time.Second)
+								}
+
+								stopProg.Hide()
+								dialog.ShowInformation(title, LoadLang("stoppedDownload"), w)
+								notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
+							case "move":
+								queueProgStatus[i].SetText("press_stop")
+
+								for {
+									if !ContainsElem(queueID, queueVODID) {
+										break
+									}
+
+									time.Sleep(time.Second)
+								}
+
+								stopProg.Hide()
+								dialog.ShowInformation(title, LoadLang("stoppedDownload"), w)
+								notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
+							case "encode":
+								stopProg.Hide()
+								dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), w)
+							case "wait_incomplete_download":
+								stopProg.Hide()
+								dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), w)
+							}
+
+							stopButton.Disable()
+						})
+
+						if queueProgStatus[i].Text == "encode" {
+							stopButton.Disable()
+						}
+
+						h := queueTimeInt / 3600
+						m := (queueTimeInt - (3600 * h)) / 60
+						s := queueTimeInt - (3600 * h) - (m * 60)
+
+						form := &widget.Form{}
+
+						form.Append(LoadLang("vodTitle"), widget.NewLabel(queueTitle[i]))
+						form.Append(LoadLang("vodTime"), widget.NewLabel(fmt.Sprintf("%d시간 %d분 %d초", h, m, s)))
+						form.Append("상태", widget.NewHBox(queueStatus[i], layout.NewSpacer(), stopButton))
+
+						//moreViewForm := widget.NewVBox(
+						//	widget.NewLabel(fmt.Sprintf("%s: %s", LoadLang("vodTitle"), queueTitle[i])),
+						//	widget.NewLabel(fmt.Sprintf("%s: %d시간 %d분 %d초", LoadLang("vodTime"), h, m, s)),
+						//	widget.NewHBox(queueStatus[i], layout.NewSpacer(), stopButton),
+						//)
+
+						vodThumbnailImg := &canvas.Image{
+							File:     queueThumb[i],
+							FillMode: canvas.ImageFillOriginal,
+						}
+						canvas.Refresh(vodThumbnailImg)
+
+						queueInfo := fyne.NewContainerWithLayout(
+							layout.NewHBoxLayout(), vodThumbnailImg, form,
+						)
+
+						queueLayout := widget.NewVBox(
+							queueInfo,
+							queueProgress[i],
+						)
+
+						queue.Append(queueLayout)
+					}
+				}
+
+				fmt.Println("새로 고침")
+				queue.Refresh()
+
+				time.Sleep(500 * time.Millisecond)
+			}
+		}()
+
+		w = a.NewWindow(title)
+		w.SetMainMenu(mainMenu)
+		w.CenterOnScreen()
+		w.SetFixedSize(false)
+		w.SetIcon(appInfo.icon)
+		w.SetTitle(title)
+		w.SetContent(mainContent)
+		w.SetMaster()
+		w.Resize(fyne.NewSize(500, 550))
+
+		w.SetOnClosed(func() { // 강제 종료
+			if len(queueCmd) != 0 {
+				fmt.Println("Quit: Forced")
+				for _, cmdProgress := range queueCmd {
+					err = cmdProgress.Process.Kill()
+					ErrHandle(err)
+				}
+			}
+
+			ClearDir(dirTemp)
+
+			os.Exit(0)
+		})
+
 		if needUpdate {
 			updateContent := widget.NewGroup(LoadLang("foundNewVersion"),
 				widget.NewLabel(updateNote),
@@ -352,100 +580,26 @@ func main() { // 메인
 
 			dialog.ShowCustomConfirm(title, LoadLang("ok"), "", updateContent, func(c bool) {
 				if c {
-					OpenURL("https://notice.tmi.tips/TDownloader/exeGuide")
+					OpenURL("https://notice.tmi.tips/TDownloader/release")
 				}
 
 				os.Exit(1)
 			}, w)
 		}
 
-		w.SetMainMenu(fyne.NewMainMenu(fyne.NewMenu(LoadLang("menuInfo"),
-			fyne.NewMenuItem(LoadLang("menuInNotice"), func() {
-				go func() {
-					if chromeStatus {
-						ui, err := lorca.New("https://notice.tmi.tips/TDownloader/", "", 800, 600)
-						ErrHandle(err)
-						defer ui.Close()
-
-						<-ui.Done()
-					} else {
-						OpenURL("https://notice.tmi.tips/TDownloader/")
-					}
-				}()
-			}),
-			fyne.NewMenuItem(LoadLang("menuInLicense"), func() {
-				go func() {
-					if chromeStatus {
-						ui, err := lorca.New("https://notice.tmi.tips/License/", "", 800, 600)
-						ErrHandle(err)
-						defer ui.Close()
-
-						<-ui.Done()
-					} else {
-						OpenURL("https://notice.tmi.tips/License/")
-					}
-				}()
-			})),
-			fyne.NewMenu(LoadLang("menuMore"),
-				fyne.NewMenuItem(LoadLang("installRequireFile"), func() {
-					go func() {
-						prog := dialog.NewProgress(title, LoadLang("downloadNecessary"), w)
-						prog.SetValue(0.5)
-						prog.Show()
-
-						Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
-						ErrHandle(err)
-
-						r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
-						ErrHandle(err)
-						defer r.Close()
-
-						err = Untar(dirBin, r)
-						ErrHandle(err)
-
-						prog.Hide()
-
-						dialog.ShowInformation(title, LoadLang("downloadComplete"), w)
-					}()
-				}),
-				fyne.NewMenuItem(LoadLang("tabSetting"), func() {
-					go func() {
-						showSettingDiag := dialog.NewProgressInfinite(title, LoadLang("editSettingNow"), w)
-						showSettingDiag.Show()
-
-						w2 := a.NewWindow(title)
-
-						w2.SetOnClosed(func() {
-							showSettingDiag.Hide()
-						})
-
-						object := Advanced(w2)
-
-						w2.SetContent(object)
-						w2.Resize(fyne.NewSize(430, 350))
-						w2.SetFixedSize(true)
-						w2.CenterOnScreen()
-						w2.Show()
-					}()
-				})),
-			fyne.NewMenu(twitchDisplayName+LoadLang("hello"),
-				fyne.NewMenuItem(LoadLang("logout"), func() {
-					a.Preferences().SetString("twitchRefreshToken", "error")
-					a.Preferences().SetString("twitchRefreshToken", "error")
-
-					fmt.Println(a.Preferences().String("twitchRefreshToken"))
-
-					RunAgain()
-				}),
-			)))
-
-		w.SetMaster()
-		w.Resize(fyne.NewSize(420, 180))
-
 		checkClipboard = false // 클립보드 감지
 
-		splWindow.Close()
-		w.Show()
+		WriteResource(dirBin+"/logo.png", logo)
+
+		splWindow.Hide()
+
+		if bgMode {
+			_ = beeep.Notify(title, "TMI Downloader is running in the background.", dirBin+"/logo.png")
+
+			w.Hide()
+		} else {
+			w.Show()
+		}
 	}()
 
 	splWindow.ShowAndRun()

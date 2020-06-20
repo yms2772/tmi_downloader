@@ -19,25 +19,26 @@ const ( // OAuth2 Key 상수
 )
 
 const ( // API
-	allinone = "https://dl.tmi.tips/api/allinone"
+	allinone = "https://api.tmi.tips/request/tdownloader"
 )
 
 var ( // Main 변수
-	version        = "20200613"
-	title          = "TMI Downloader"
-	dirTemp        = VarOS("dirTemp")
-	dirBin         = VarOS("dirBin")
-	dirWebFonts    = VarOS("dirWebFonts")
-	dirDefDown     = VarOS("dirDefDown")
-	dirThumb       = dirTemp + "/thumb"
-	ffmpegURL      = VarOS("ffmpegURL")
-	ffmpegBinary   = VarOS("ffmpegBinary")
-	lang           string
-	chromeStatus   = CheckChrome()
-	checkClipboard bool
-	programUUID    string
-	debugFileName  string
-	err            error
+	version            = "20200620"
+	title              = "TMI Downloader"
+	dirTemp            = VarOS("dirTemp")
+	dirBin             = VarOS("dirBin")
+	dirWebFonts        = VarOS("dirWebFonts")
+	dirDefDown         = VarOS("dirDefDown")
+	dirThumb           = dirTemp + "/thumb"
+	ffmpegURL          = VarOS("ffmpegURL")
+	ffmpegBinary       = VarOS("ffmpegBinary")
+	lang               string
+	chromeStatus       = CheckChrome()
+	checkClipboard     bool
+	programUUID        string
+	debugFileName      string
+	ssFFmpeg, toFFmpeg string
+	err                error
 )
 
 var ( // 대기열 변수
@@ -71,8 +72,8 @@ var ( // Twitch OAuth2 Info
 var ( // Function 변수
 	debugLog                                             *os.File
 	helixClient                                          *helix.Client
-	button                                               *widget.Button
 	intervalCheck, intervalStartCheck, intervalStopCheck *widget.Check
+	keyEntry                                             *enterEntry
 	a                                                    fyne.App
 	splWindow, w                                         fyne.Window
 	bot                                                  *tgbotapi.BotAPI
