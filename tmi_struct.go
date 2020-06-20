@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sync"
 
+	"fyne.io/fyne/widget"
+
 	"fyne.io/fyne"
 )
 
@@ -60,4 +62,8 @@ type Handler func(http.ResponseWriter, *http.Request) error
 type appInfo struct {
 	name string
 	icon fyne.Resource
+}
+
+type enterEntry struct {
+	widget.Entry
 }

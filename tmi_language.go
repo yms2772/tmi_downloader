@@ -4,7 +4,7 @@ var ( // 언어 변수
 	// 영어
 	langEN = `{
 		"lang": "en",
-		"keyEntryHolder": "https://www.twitch.tv/videos/000000000",
+		"keyEntryHolder": "https://www.twitch.tv/videos/000000000 (Type Enter)",
 		"themeDark": "Dark",
 		"themeLight": "Light",
 		"statusDefault": "Status",
@@ -102,7 +102,7 @@ var ( // 언어 변수
 	// 한국어
 	langKO = `{
 		"lang": "ko",
-		"keyEntryHolder": "https://www.twitch.tv/videos/000000000",
+		"keyEntryHolder": "https://www.twitch.tv/videos/000000000 (주소 입력 후 엔터)",
 		"themeDark": "다크 모드",
 		"themeLight": "라이트 모드",
 		"statusDefault": "상태",
@@ -123,7 +123,7 @@ var ( // 언어 변수
 		"invalidCode": "잘못된 주소입니다.",
 		"waitForDownload": "다운로드 대기 중...",
 		"addQueue": "대기열 추가하는 중입니다. 잠시만 기다려주세요.",
-		"noQueue": "대기열에 등록된 VOD가 없습니다.",
+		"noQueue": "대기열에 등록된 VOD가 없습니다",
 		"downloading": "다운로드 중...",
 		"waitIncompleteDownload": "끝나지 않은 다운로드 대기 중...",
 		"generateFile": "파일 생성하는 중...",
