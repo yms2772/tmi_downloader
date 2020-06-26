@@ -160,8 +160,8 @@ func ErrHandle(e error) {
 
 		var queueIDList string
 
-		for _, k := range queue {
-			queueIDList += fmt.Sprintln("https://www.twitch.tv/videos/" + k.ID)
+		for i, k := range queue {
+			queueIDList += fmt.Sprintln(strconv.Itoa(i+1) + ". https://www.twitch.tv/videos/" + k.ID)
 		}
 
 		msgToSend := fmt.Sprintf("----- 유저 정보\n"+
