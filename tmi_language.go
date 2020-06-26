@@ -122,7 +122,7 @@ var ( // 언어 변수
 		"validateCode": "코드 검증 중...",
 		"invalidCode": "잘못된 주소입니다.",
 		"waitForDownload": "다운로드 대기 중...",
-		"addQueue": "대기열 추가하는 중입니다. 잠시만 기다려주세요.",
+		"addQueue": "추가 중...",
 		"noQueue": "대기열에 등록된 VOD가 없습니다",
 		"downloading": "다운로드 중...",
 		"waitIncompleteDownload": "끝나지 않은 다운로드 대기 중...",

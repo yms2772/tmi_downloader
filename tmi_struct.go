@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"os/exec"
 	"sync"
 
 	"fyne.io/fyne/widget"
@@ -66,4 +67,19 @@ type appInfo struct {
 
 type enterEntry struct {
 	widget.Entry
+}
+
+type QueueInfo struct {
+	Done       bool
+	Type       string
+	ID         string
+	Title      string
+	Time       string
+	Thumb      string
+	SSFFmpeg   string
+	ToFFmpeg   string
+	Progress   *widget.ProgressBar
+	ProgStatus *widget.Entry
+	Status     *widget.Label
+	CMD        *exec.Cmd
 }
