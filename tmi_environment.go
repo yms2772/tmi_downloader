@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 
 	"fyne.io/fyne"
 	"fyne.io/fyne/widget"
@@ -23,33 +22,29 @@ const ( // API
 )
 
 var ( // Main 변수
-	version            = "20200620"
-	title              = "TMI Downloader"
-	dirTemp            = VarOS("dirTemp")
-	dirBin             = VarOS("dirBin")
-	dirWebFonts        = VarOS("dirWebFonts")
-	dirDefDown         = VarOS("dirDefDown")
-	dirThumb           = dirTemp + "/thumb"
-	ffmpegURL          = VarOS("ffmpegURL")
-	ffmpegBinary       = VarOS("ffmpegBinary")
-	lang               string
-	chromeStatus       = CheckChrome()
-	checkClipboard     bool
-	programUUID        string
-	debugFileName      string
-	ssFFmpeg, toFFmpeg string
-	err                error
+	version        = "20200627"
+	title          = "TMI Downloader"
+	dirTemp        string
+	dirBin         = VarOS("dirBin")
+	dirWebFonts    = VarOS("dirWebFonts")
+	dirDefDown     = VarOS("dirDefDown")
+	dirThumb       = dirTemp + "/thumb"
+	ffmpegURL      = VarOS("ffmpegURL")
+	ffmpegBinary   = VarOS("ffmpegBinary")
+	lang           string
+	chromeStatus   = CheckChrome()
+	checkClipboard bool
+	programUUID    string
+	debugFileName  string
+	err            error
+	errCount       int
 )
 
 var ( // 대기열 변수
-	queueID         []string
-	queueTitle      []string
-	queueTime       []string
-	queueThumb      []string
-	queueProgress   []*widget.ProgressBar
-	queueProgStatus []*widget.Entry
-	queueStatus     []*widget.Label
-	queueCmd        []*exec.Cmd
+	queue       = make(map[int]*QueueInfo)
+	nowProgress int
+	nowQueue    int
+	queueCount  int
 )
 
 var ( // Twitch OAuth2 Info
@@ -77,4 +72,6 @@ var ( // Function 변수
 	a                                                    fyne.App
 	splWindow, w                                         fyne.Window
 	bot                                                  *tgbotapi.BotAPI
+	queueContent                                         *widget.Group
+	mainContent                                          *fyne.Container
 )

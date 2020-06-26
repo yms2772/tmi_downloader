@@ -10,23 +10,20 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
+
+	"fyne.io/fyne/app"
 
 	"github.com/gen2brain/beeep"
 
 	"fyne.io/fyne"
-	"fyne.io/fyne/app"
 	"fyne.io/fyne/canvas"
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/driver/desktop"
-	"fyne.io/fyne/layout"
-	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
 
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/gofrs/uuid"
-	"github.com/martinlindhe/notify"
 	"github.com/nicklaw5/helix"
 	"github.com/zserge/lorca"
 	"golang.org/x/oauth2"
@@ -34,6 +31,8 @@ import (
 )
 
 func main() { // 메인
+	a = app.NewWithID("tmi.tips.dl")
+
 	var updateFlag, resetFlag, httpMode, bgMode bool
 	var loginFlag string
 
@@ -116,8 +115,6 @@ func main() { // 메인
 	canvas.Refresh(logoImage)
 	logoImage.Resize(fyne.NewSize(50, 50))
 
-	a = app.NewWithID("tmi.tips.dl")
-
 	lang = a.Preferences().StringWithFallback("language", "Korean")
 
 	appInfo := &appInfo{
@@ -128,6 +125,8 @@ func main() { // 메인
 
 	a.SetIcon(appInfo.icon)
 	a.Settings().SetTheme(NewCustomTheme())
+
+	dirTemp = a.Preferences().StringWithFallback("dir_temp", VarOS("dirTemp"))
 
 	drv := a.Driver().(desktop.Driver)
 
@@ -159,7 +158,9 @@ func main() { // 메인
 			splWindow.SetContent(SplBox(LoadLang("downloadNecessary"), logoImage))
 
 			if _, err := os.Stat(dirBin + "/" + ffmpegBinary); os.IsNotExist(err) {
-				Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL) // ffmpeg 다운로드
+				out, resp, _ := Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL) // ffmpeg 다운로드
+				out.Close()
+				resp.Body.Close()
 
 				r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
 				ErrHandle(err)
@@ -174,7 +175,7 @@ func main() { // 메인
 
 		splWindow.SetContent(SplBox(LoadLang("loadProgram"), logoImage))
 
-		needUpdate, updateNote := CheckUpdate()
+		needUpdate, newVersion := CheckUpdate()
 		if !updateFlag {
 			needUpdate = false
 		}
@@ -362,8 +363,9 @@ func main() { // 메인
 				prog.SetValue(0.5)
 				prog.Show()
 
-				Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
-				ErrHandle(err)
+				out, resp, _ := Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
+				out.Close()
+				resp.Body.Close()
 
 				r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
 				ErrHandle(err)
@@ -413,141 +415,7 @@ func main() { // 메인
 			fyne.NewMenu(twitchDisplayName+LoadLang("hello"), logoutItem),
 		)
 
-		queue, mainContent := MoreView()
-
-		go func() {
-			preQueueID := queueID
-			for {
-				if len(preQueueID) != len(queueID) {
-					fmt.Println("대기열 초기화")
-
-					preQueueID = queueID
-				} else {
-					time.Sleep(500 * time.Millisecond)
-
-					continue
-				}
-
-				if len(queueID) != 0 {
-					for i := range queueID {
-						fmt.Println("--- 대기열 로드")
-						fmt.Println("Title: " + queueTitle[i])
-						fmt.Println("Time: " + queueTime[i])
-						fmt.Println("Thumbnail: " + queueThumb[i])
-
-						queueVODID := queueID[i]
-
-						queueTimeInt, err := strconv.Atoi(queueTime[i])
-						ErrHandle(err)
-
-						var stopButton *widget.Button
-
-						stopButton = widget.NewButtonWithIcon(LoadLang("cancel"), theme.CancelIcon(), func() {
-							stopProg := dialog.NewProgressInfinite(title, "진행 중지를 기다리는 중...", w)
-							stopProg.Show()
-
-							switch queueProgStatus[i].Text {
-							case "wait":
-								stopProg.Hide()
-								dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), w)
-							case "download":
-								queueProgStatus[i].SetText("press_stop")
-
-								for {
-									if !ContainsElem(queueID, queueVODID) {
-										break
-									}
-
-									time.Sleep(time.Second)
-								}
-
-								stopProg.Hide()
-								dialog.ShowInformation(title, LoadLang("stoppedDownload"), w)
-								notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
-							case "merge":
-								queueProgStatus[i].SetText("press_stop")
-
-								for {
-									if !ContainsElem(queueID, queueVODID) {
-										break
-									}
-
-									time.Sleep(time.Second)
-								}
-
-								stopProg.Hide()
-								dialog.ShowInformation(title, LoadLang("stoppedDownload"), w)
-								notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
-							case "move":
-								queueProgStatus[i].SetText("press_stop")
-
-								for {
-									if !ContainsElem(queueID, queueVODID) {
-										break
-									}
-
-									time.Sleep(time.Second)
-								}
-
-								stopProg.Hide()
-								dialog.ShowInformation(title, LoadLang("stoppedDownload"), w)
-								notify.Alert(title, "Notice", "Download Canceled", dirThumb+"/"+queueVODID+".jpg")
-							case "encode":
-								stopProg.Hide()
-								dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), w)
-							case "wait_incomplete_download":
-								stopProg.Hide()
-								dialog.ShowInformation(title, LoadLang("stoppedNoStatus"), w)
-							}
-
-							stopButton.Disable()
-						})
-
-						if queueProgStatus[i].Text == "encode" {
-							stopButton.Disable()
-						}
-
-						h := queueTimeInt / 3600
-						m := (queueTimeInt - (3600 * h)) / 60
-						s := queueTimeInt - (3600 * h) - (m * 60)
-
-						form := &widget.Form{}
-
-						form.Append(LoadLang("vodTitle"), widget.NewLabel(queueTitle[i]))
-						form.Append(LoadLang("vodTime"), widget.NewLabel(fmt.Sprintf("%d시간 %d분 %d초", h, m, s)))
-						form.Append("상태", widget.NewHBox(queueStatus[i], layout.NewSpacer(), stopButton))
-
-						//moreViewForm := widget.NewVBox(
-						//	widget.NewLabel(fmt.Sprintf("%s: %s", LoadLang("vodTitle"), queueTitle[i])),
-						//	widget.NewLabel(fmt.Sprintf("%s: %d시간 %d분 %d초", LoadLang("vodTime"), h, m, s)),
-						//	widget.NewHBox(queueStatus[i], layout.NewSpacer(), stopButton),
-						//)
-
-						vodThumbnailImg := &canvas.Image{
-							File:     queueThumb[i],
-							FillMode: canvas.ImageFillOriginal,
-						}
-						canvas.Refresh(vodThumbnailImg)
-
-						queueInfo := fyne.NewContainerWithLayout(
-							layout.NewHBoxLayout(), vodThumbnailImg, form,
-						)
-
-						queueLayout := widget.NewVBox(
-							queueInfo,
-							queueProgress[i],
-						)
-
-						queue.Append(queueLayout)
-					}
-				}
-
-				fmt.Println("새로 고침")
-				queue.Refresh()
-
-				time.Sleep(500 * time.Millisecond)
-			}
-		}()
+		queueContent, mainContent = MoreView()
 
 		w = a.NewWindow(title)
 		w.SetMainMenu(mainMenu)
@@ -560,10 +428,10 @@ func main() { // 메인
 		w.Resize(fyne.NewSize(500, 550))
 
 		w.SetOnClosed(func() { // 강제 종료
-			if len(queueCmd) != 0 {
+			if len(queue) != 0 {
 				fmt.Println("Quit: Forced")
-				for _, cmdProgress := range queueCmd {
-					err = cmdProgress.Process.Kill()
+				for _, cmdProgress := range queue {
+					err = cmdProgress.CMD.Process.Kill()
 					ErrHandle(err)
 				}
 			}
@@ -574,20 +442,21 @@ func main() { // 메인
 		})
 
 		if needUpdate {
-			updateContent := widget.NewGroup(LoadLang("foundNewVersion"),
-				widget.NewLabel(updateNote),
-			)
+			if a.Preferences().String("ignore_version") != newVersion {
+				u, _ := url.Parse("https://notice.tmi.tips/TDownloader/")
 
-			dialog.ShowCustomConfirm(title, LoadLang("ok"), "", updateContent, func(c bool) {
-				if c {
-					OpenURL("https://notice.tmi.tips/TDownloader/release")
-				}
+				updateContent := widget.NewGroup(LoadLang("foundNewVersion"),
+					widget.NewLabel("아래 링크에서 자세한 내용 확인하실 수 있습니다"),
+					widget.NewHyperlink("https://notice.tmi.tips/TDownloader/", u),
+				)
 
-				os.Exit(1)
-			}, w)
+				dialog.ShowCustomConfirm(title, "OK", "이번 업데이트 무시하기", updateContent, func(c bool) {
+					if !c {
+						a.Preferences().SetString("ignore_version", newVersion)
+					}
+				}, w)
+			}
 		}
-
-		checkClipboard = false // 클립보드 감지
 
 		WriteResource(dirBin+"/logo.png", logo)
 
@@ -600,6 +469,8 @@ func main() { // 메인
 		} else {
 			w.Show()
 		}
+
+		checkClipboard = true // 클립보드 감지
 	}()
 
 	splWindow.ShowAndRun()
