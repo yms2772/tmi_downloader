@@ -70,16 +70,22 @@ type enterEntry struct {
 }
 
 type QueueInfo struct {
-	Done       bool
-	Type       string
-	ID         string
-	Title      string
-	Time       string
-	Thumb      string
-	SSFFmpeg   string
-	ToFFmpeg   string
-	Progress   *widget.ProgressBar
-	ProgStatus *widget.Entry
-	Status     *widget.Label
-	CMD        *exec.Cmd
+	Done          bool
+	Download      int // 0: Multi, 1: Single
+	Interval      bool
+	IntervalStart bool
+	IntervalEnd   bool
+	Type          string
+	ID            string
+	Title         string
+	Time          string
+	TimeInt       int
+	Thumb         string
+	TempDir       string
+	SSFFmpeg      string
+	ToFFmpeg      string
+	Progress      *widget.ProgressBar
+	ProgStatus    *widget.Entry
+	StatusLabel   *widget.Label
+	CMD           *exec.Cmd
 }

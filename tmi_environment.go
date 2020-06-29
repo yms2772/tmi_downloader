@@ -18,11 +18,12 @@ const ( // OAuth2 Key 상수
 )
 
 const ( // API
-	allinone = "https://api.tmi.tips/request/tdownloader"
+	tdownloader = "https://api.tmi.tips/request/tdownloader"
+	loginMember = "https://api.tmi.tips/request/LoginMember"
 )
 
 var ( // Main 변수
-	version        = "20200627"
+	version        = "0630"
 	title          = "TMI Downloader"
 	dirTemp        string
 	dirBin         = VarOS("dirBin")
@@ -43,8 +44,6 @@ var ( // Main 변수
 var ( // 대기열 변수
 	queue       = make(map[int]*QueueInfo)
 	nowProgress int
-	nowQueue    int
-	queueCount  int
 )
 
 var ( // Twitch OAuth2 Info
