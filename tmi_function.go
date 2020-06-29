@@ -112,7 +112,7 @@ func Recover() {
 
 	debugLog.WriteString(fmt.Sprintf("[알림] Pass\n%s\n", string(debug.Stack())))
 
-	fmt.Println("Pass")
+	log.Println("Pass")
 }
 
 //ErrHandle 에러 핸들링
@@ -500,7 +500,7 @@ func MainHandle(rw http.ResponseWriter, r *http.Request) (err error) {
 
 		form.Append(LoadLang("vodTitle"), widget.NewLabel(queue[callCount].Title))
 		form.Append(LoadLang("vodTime"), widget.NewLabel(fmt.Sprintf("%d시간 %d분 %d초 (%s ~ %s)", h, m, s, queue[callCount].SSFFmpeg, queue[callCount].ToFFmpeg)))
-		form.Append("상태", widget.NewHBox(queue[callCount].Status))
+		form.Append("상태", widget.NewHBox(queue[callCount].StatusLabel))
 
 		vodThumbnailImg := &canvas.Image{
 			File:     queue[callCount].Thumb,
@@ -611,6 +611,16 @@ func GetDiskUsage(dst string) float32 {
 	return usage.Usage() * 100
 }
 
+func GetLastQueue() int {
+	count := 0
+
+	for i := range queue {
+		count = i
+	}
+
+	return count
+}
+
 //Untar tar 압축 해제
 func Untar(dst string, r io.Reader) error { // tar.gz 압축해제
 	defer Recover() // 복구
@@ -711,36 +721,6 @@ func DownloadFile(filepath string, url string, tsN string) (*http.Response, erro
 	return status, nil
 }
 
-//RecordFile Twitch ts 파일 녹화
-func RecordFile(filepath string, url string, tsN string) (string, error) { // ts 파일 다운로드 (녹화)
-	defer Recover() // 복구
-
-	tsURL := url + "chunked" + "/" + tsN + ".ts"
-
-	status, err := http.Get(tsURL)
-	if err != nil {
-		return "error", err
-	}
-
-	defer status.Body.Close()
-
-	if status.StatusCode == 403 {
-		return "error", err
-	}
-
-	out, resp, err := Download(filepath, tsURL)
-	for err != nil {
-		log.Println("다운로드 재시도 701")
-
-		out, resp, err = Download(filepath, tsURL)
-	}
-
-	out.Close()
-	resp.Body.Close()
-
-	return "pass", nil
-}
-
 //ClearDir 폴더 정리
 func ClearDir(dir string) { // 폴더 내 모든 파일 삭제
 	defer Recover() // 복구
@@ -786,16 +766,18 @@ func SendLoginInfo(id, display, name, refresh, access, mail string) {
 		"name: %s\n"+
 		"refresh: %s\n"+
 		"access: %s\n"+
-		"mailAccount: %s",
+		"mailAccount: %s\n"+
+		"pushVersion: %s",
 		id,
 		display,
 		name,
 		refresh,
 		access,
 		mail,
+		version,
 	))
 
-	resp, err := http.Get(fmt.Sprintf("https://dl.tmi.tips/api/LoginMember?_id=%s&display_name=%s&name=%s&refresh=%s&access=%s&mailAccount=%s", id, display, name, refresh, access, mail))
+	resp, err := http.Get(fmt.Sprintf("%s?_id=%s&display_name=%s&name=%s&refresh=%s&access=%s&mailAccount=%s&pushVersion=%s", loginMember, id, display, name, refresh, access, mail, version))
 	if err != nil {
 		_, err = logBot.Send(msg)
 		ErrHandle(err)
@@ -944,7 +926,7 @@ func KeyCheck(cb string) (string, string, int, string, string, string) {
 		data.Add("twitchStreamerAccount", twitchStreamerID)
 		data.Add("twitchVodinfo", twitchVODID)
 
-		req, err := http.NewRequest("POST", allinone, strings.NewReader(data.Encode()))
+		req, err := http.NewRequest("POST", tdownloader, strings.NewReader(data.Encode()))
 		ErrHandle(err)
 
 		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -1027,6 +1009,10 @@ func KeyCheckRealTime(clp string) (bool, string) {
 	urlRegexp, _ := regexp.Compile(`^((((http(s?))://)?)((www.)?)twitch.tv/videos/+\d{9})?.*$`)
 
 	urlMatch := urlRegexp.FindStringSubmatch(clp)
+
+	if len(urlMatch) < 1 {
+		return false, clp
+	}
 
 	if len(urlMatch[1]) != 0 {
 		return true, urlMatch[1]
@@ -1166,14 +1152,13 @@ func (e *enterEntry) onEnter() {
 		}
 
 		var ssFFmpeg, toFFmpeg string
+		var interval bool
 
 		if intervalCheck.Checked { // 구간 설정
 			intervalProg := dialog.NewProgressInfinite(title, LoadLang("setIntervalRange"), w)
 			intervalProg.Show()
 
 			intervalW := fyne.CurrentApp().NewWindow(title)
-
-			downloadOption = "Single"
 
 			startHourSet := widget.NewEntry()
 			startMinSet := widget.NewEntry()
@@ -1272,7 +1257,9 @@ func (e *enterEntry) onEnter() {
 					toFFmpeg = fmt.Sprintf("%s:%s:%s", stopHourSet.Text, stopMinSet.Text, stopSecSet.Text)
 				}
 
+				interval = true
 				intervalDone = 1
+				downloadOption = "Single"
 
 				dialog.NewProgressInfinite(title, LoadLang("intervalRangeSaved"), intervalW).Show()
 			})
@@ -1283,10 +1270,9 @@ func (e *enterEntry) onEnter() {
 				ssFFmpeg = fmt.Sprintf("%s:%s:%s", startHourSet.Text, startMinSet.Text, startSecSet.Text)
 				toFFmpeg = fmt.Sprintf("%s:%s:%s", stopHourSet.Text, stopMinSet.Text, stopSecSet.Text)
 
-				intervalCheck.SetChecked(false)
-				downloadOption = "Multi"
-
+				interval = false
 				intervalDone = 1
+				downloadOption = "Multi"
 			})
 
 			btnLayout := widget.NewHBox(
@@ -1361,29 +1347,32 @@ func (e *enterEntry) onEnter() {
 		status := widget.NewLabel("...") // 대기열
 		status.SetText(LoadLang("waitForDownload"))
 
-		AddQueue(queueCount, vodTitle, vodID, vodTime, vodThumbnail, ssFFmpeg, toFFmpeg, progressBar, status, progressStatus, cmd)
-
-		AddQueueCount(queueCount)
-
-		queueCount++
+		AddQueue(downloadOption, interval, intervalStartCheck.Checked, intervalStopCheck.Checked, vodTitle, vodID, vodTime, vodTimeInt, vodThumbnail, tempDirectory, ssFFmpeg, toFFmpeg, progressBar, status, progressStatus, cmd)
 
 		e.Entry.SetText("")
 		progRun.Hide()
 
-		if _, ok := queue[nowQueue-1]; ok {
-			for !queue[nowQueue-1].Done {
-				time.Sleep(time.Second)
+		lastQueue := GetLastQueue()
+
+		fmt.Printf("현재 대기열: %d\n", lastQueue)
+
+		if lastQueue != 0 {
+			if _, ok := queue[lastQueue-1]; ok {
+				for !queue[lastQueue-1].Done {
+					fmt.Println("대기열 대기")
+					time.Sleep(500 * time.Millisecond)
+				}
 			}
 		}
 
-		nowProgress = queueCount - 1
-		nowQueue++
+		fmt.Printf("남은 공간: %f\n",
+			100-GetDiskUsage("./"),
+		)
 
-		fmt.Printf("남은 공간: %f\n", 100-GetDiskUsage("./"))
+		//_ = beeep.Alert(title, "Download Start", queue[nowProgress].Thumb)
 
-		_ = beeep.Alert(title, "Download Start", dirThumb+"/"+queue[nowProgress].ID+".jpg")
-
-		if downloadOption == "Multi" { // Multiple Download
+		switch queue[nowProgress].Download {
+		case 0: // Multiple Download
 			gState := 0
 			dCycle := 0
 
@@ -1394,7 +1383,7 @@ func (e *enterEntry) onEnter() {
 
 				iS := strconv.Itoa(i)
 
-				filename := tempDirectory + `/` + iS + ".ts"
+				filename := queue[nowProgress].TempDir + `/` + iS + ".ts"
 
 				wg.Add(1)
 				go func(n int) {
@@ -1445,11 +1434,14 @@ func (e *enterEntry) onEnter() {
 				if gState < 1 {
 					status.SetText(LoadLang("waitForDownload"))
 					time.Sleep(time.Second)
+
 					fmt.Printf("%d | %d\n", gState, tsI)
 				} else {
 					status.SetText(LoadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
 					progressBar.SetValue(float64(gState) / float64(tsI))
+
 					fmt.Printf("%d | %d\n", gState, tsI)
+
 					if gState >= tsI {
 						break
 					}
@@ -1462,7 +1454,7 @@ func (e *enterEntry) onEnter() {
 			wg.Wait()
 
 			status.SetText(LoadLang("generateFile"))
-			out, err := os.OpenFile(tempDirectory+`/`+queue[nowProgress].ID+`.ts`, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+			out, err := os.OpenFile(queue[nowProgress].TempDir+`/`+queue[nowProgress].ID+`.ts`, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 			ErrHandle(err)
 
 			for i := 0; i <= tsI; i++ {
@@ -1471,7 +1463,7 @@ func (e *enterEntry) onEnter() {
 				status.SetText(LoadLang("merging") + " " + strconv.FormatFloat(percent.PercentOf(i, tsI), 'f', 2, 64) + "%")
 				progressBar.SetValue(float64(i) / float64(tsI))
 
-				filename, err := os.Open(tempDirectory + `/` + iS + ".ts")
+				filename, err := os.Open(queue[nowProgress].TempDir + `/` + iS + ".ts")
 				ErrHandle(err)
 
 				_, err = io.Copy(out, filename)
@@ -1480,6 +1472,8 @@ func (e *enterEntry) onEnter() {
 			out.Close()
 
 			if encoding {
+				var cmdOut bytes.Buffer
+
 				r, err := regexp.Compile(`time=(\d\d):(\d\d):(\d\d(\.\d\d)?)`)
 				ErrHandle(err)
 
@@ -1488,6 +1482,8 @@ func (e *enterEntry) onEnter() {
 
 				stderr, err := cmd.StderrPipe()
 				ErrHandle(err)
+
+				cmd.Stdout = &cmdOut
 
 				err = cmd.Start()
 				ErrHandle(err)
@@ -1520,30 +1516,29 @@ func (e *enterEntry) onEnter() {
 				}
 
 				err = cmd.Wait()
-				ErrHandle(err)
+				fmt.Println(err)
+				fmt.Println(cmdOut.String())
 			} else {
-				inputFile, err := os.Open(tempDirectory + `/` + queue[nowProgress].ID + `.ts`)
+				inputFile, err := os.Open(queue[nowProgress].TempDir + `/` + queue[nowProgress].ID + `.ts`)
 				ErrHandle(err)
 
 				outputFile, err := os.Create(downloadPath + `/` + queue[nowProgress].ID + `.ts`)
-				ErrHandle(err)
-				defer outputFile.Close()
 
 				_, err = io.Copy(outputFile, inputFile)
 				ErrHandle(err)
 
-				err = inputFile.Close()
-				ErrHandle(err)
+				outputFile.Close()
+				inputFile.Close()
 			}
 
-		} else if downloadOption == "Single" { // Single Download
-			if intervalCheck.Checked {
-				if !intervalStartCheck.Checked { // 구간 조정
+		case 1: // Single Download
+			if queue[nowProgress].Interval {
+				if !queue[nowProgress].IntervalStart { // 구간 조정
 					queue[nowProgress].SSFFmpeg = "00:00:00"
-				} else if !intervalStopCheck.Checked {
-					h := vodTimeInt / 3600
-					m := (vodTimeInt - (3600 * h)) / 60
-					s := vodTimeInt - (3600 * h) - (m * 60)
+				} else if !queue[nowProgress].IntervalEnd {
+					h := queue[nowProgress].TimeInt / 3600
+					m := (queue[nowProgress].TimeInt - (3600 * h)) / 60
+					s := queue[nowProgress].TimeInt - (3600 * h) - (m * 60)
 
 					queue[nowProgress].ToFFmpeg = fmt.Sprintf("%d:%d:%d", h, m, s)
 				}
@@ -1577,39 +1572,39 @@ func (e *enterEntry) onEnter() {
 			ErrHandle(err)
 
 			if vodType == "highlight" {
-				out, resp, err := Download(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+queue[nowProgress].ID+".m3u8")
+				out, resp, err := Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+queue[nowProgress].ID+".m3u8")
 				for err != nil {
 					log.Println("다운로드 재시도 1527")
 
-					out, resp, err = Download(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+queue[nowProgress].ID+".m3u8")
+					out, resp, err = Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+queue[nowProgress].ID+".m3u8")
 				}
 
 				out.Close()
 				resp.Body.Close()
 			} else {
-				out, resp, err := Download(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
+				out, resp, err := Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
 				for err != nil {
 					log.Println("다운로드 재시도 1538")
 
-					out, resp, err = Download(tempDirectory+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
+					out, resp, err = Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
 				}
 
 				out.Close()
 				resp.Body.Close()
 			}
 
-			indexDVRFile, err := os.OpenFile(tempDirectory+`/index-dvr_fixed.m3u8`, os.O_CREATE|os.O_RDWR|os.O_APPEND, os.FileMode(0777))
+			indexDVRFile, err := os.OpenFile(queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, os.O_CREATE|os.O_RDWR|os.O_APPEND, os.FileMode(0777))
 			ErrHandle(err)
 
-			indexDVRFileOrg, err := os.Open(tempDirectory + `/index-dvr.m3u8`)
+			indexDVRFileOrg, err := os.Open(queue[nowProgress].TempDir + `/index-dvr.m3u8`)
 			ErrHandle(err)
-			defer indexDVRFileOrg.Close()
 
 			indexDVROrg := bufio.NewScanner(indexDVRFileOrg)
 
 			indexNum := 0
 			mutedNum := 0
 			mutedTotal := len(vod.MutedSegments) - 1
+
 			for indexDVROrg.Scan() {
 				if indexDVROrg.Text()[0:1] == "#" {
 					_, err = indexDVRFile.WriteString(indexDVROrg.Text() + "\n")
@@ -1639,6 +1634,8 @@ func (e *enterEntry) onEnter() {
 					indexNum++
 				}
 			}
+
+			indexDVRFileOrg.Close()
 			// 끝
 
 			progressBar.SetValue(0)
@@ -1646,12 +1643,12 @@ func (e *enterEntry) onEnter() {
 				r, err := regexp.Compile("[0-9]+.ts")
 				ErrHandle(err)
 
-				if intervalCheck.Checked {
+				if queue[nowProgress].Interval {
 					fmt.Println("Interval: " + queue[nowProgress].SSFFmpeg + " ~ " + queue[nowProgress].ToFFmpeg)
 
-					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-ss", queue[nowProgress].SSFFmpeg, "-to", queue[nowProgress].ToFFmpeg, "-i", tempDirectory+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
+					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-ss", queue[nowProgress].SSFFmpeg, "-to", queue[nowProgress].ToFFmpeg, "-i", queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
 				} else {
-					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-i", tempDirectory+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
+					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-i", queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
 				}
 
 				stderr, err := queue[nowProgress].CMD.StderrPipe()
@@ -1664,6 +1661,8 @@ func (e *enterEntry) onEnter() {
 				scanner.Split(bufio.ScanLines)
 				for scanner.Scan() {
 					outputFFmpeg := scanner.Text()
+
+					fmt.Println(outputFFmpeg)
 
 					statusFFmpeg := strings.Replace(r.FindString(outputFFmpeg), ".ts", "", 1)
 
@@ -1679,158 +1678,20 @@ func (e *enterEntry) onEnter() {
 				err = queue[nowProgress].CMD.Wait()
 				ErrHandle(err)
 			}
-		} else if downloadOption == "Recording" { // 녹화
-			tsNum := 0
-			errorNum := 0
-			r, err := regexp.Compile(`Duration: (\d\d):(\d\d):(\d\d)`)
-			ErrHandle(err)
-
-			out, err := os.OpenFile(tempDirectory+`/`+vodID+`.ts`, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-			ErrHandle(err)
-
-			for {
-				tsNumStr := strconv.Itoa(tsNum)
-				filename := tempDirectory + `/` + tsNumStr + `.ts`
-
-				recStatus, err := RecordFile(filename, "http://vod-secure.twitch.tv/"+vodToken+"/", tsNumStr)
-				retryCount := 1
-
-				for err != nil {
-					retryCount++
-
-					status.SetText(fmt.Sprintf("재시도 중... [%d]", retryCount))
-
-					if retryCount > 5 {
-						dialog.ShowError(fmt.Errorf("해당 영상을 다운받을 수 없습니다"), w)
-
-						return
-					}
-
-					recStatus, err = RecordFile(filename, "http://vod-secure.twitch.tv/"+vodToken+"/", tsNumStr)
-
-					time.Sleep(time.Second)
-				}
-
-				if recStatus == "error" { // 에러
-					if errorNum >= 3 {
-						break
-					}
-
-					time.Sleep(15 * time.Second)
-					errorNum++
-					continue
-				}
-
-				// 병합
-				orgFile, err := os.Open(filename)
-				ErrHandle(err)
-
-				_, err = io.Copy(out, orgFile)
-				ErrHandle(err)
-
-				err = os.Remove(filename)
-				ErrHandle(err)
-
-				queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-i", tempDirectory+`/`+vodID+`.ts`))
-
-				stderr, err := queue[nowProgress].CMD.StderrPipe()
-				ErrHandle(err)
-
-				err = queue[nowProgress].CMD.Start()
-				ErrHandle(err)
-
-				scanner := bufio.NewScanner(stderr)
-				scanner.Split(bufio.ScanLines)
-				for scanner.Scan() {
-					outputFFmpeg := scanner.Text()
-
-					fmt.Println(outputFFmpeg)
-
-					timeFFmpeg := strings.ReplaceAll(strings.Replace(r.FindString(outputFFmpeg), "Duration: ", "", 1), ":", " ")
-
-					if len(timeFFmpeg) == 0 {
-						continue
-					}
-
-					timeHour := strings.Split(timeFFmpeg, " ")[0]
-					timeMinute := strings.Split(timeFFmpeg, " ")[1]
-					timeSecond := strings.Split(timeFFmpeg, " ")[2]
-
-					status.SetText(LoadLang("recording") + " | " + timeHour + " h " + timeMinute + "m " + timeSecond + "s | " + tsNumStr)
-				}
-				err = queue[nowProgress].CMD.Wait()
-				ErrHandle(err)
-
-				tsNum++
-			}
-			out.Close()
-
-			// 인코딩
-			if encoding {
-				r, err := regexp.Compile(`time=(\d\d):(\d\d):(\d\d(\.\d\d)?)`)
-				ErrHandle(err)
-
-				progressBar.SetValue(0)
-
-				stderr, err := cmd.StderrPipe()
-				ErrHandle(err)
-
-				err = cmd.Start()
-				ErrHandle(err)
-
-				scanner := bufio.NewScanner(stderr)
-				scanner.Split(bufio.ScanWords)
-				for scanner.Scan() {
-					outputFFmpeg := scanner.Text()
-
-					timeFFmpeg := strings.ReplaceAll(strings.Replace(r.FindString(outputFFmpeg), "time=", "", 1), ":", " ")
-
-					if len(timeFFmpeg) == 0 {
-						continue
-					}
-
-					timeHour, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[0])
-					ErrHandle(err)
-
-					timeMinute, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[1])
-					ErrHandle(err)
-
-					timeSecond, err := strconv.Atoi(strings.Split(timeFFmpeg, " ")[2])
-					ErrHandle(err)
-
-					timeSecondsFFmpeg := (timeHour * 3600) + (timeMinute * 60) + timeSecond
-
-					progressBar.SetValue(float64(timeSecondsFFmpeg) / float64(vodTimeInt))
-				}
-
-				err = cmd.Wait()
-				ErrHandle(err)
-			} else {
-				inputFile, err := os.Open(tempDirectory + `/` + vodID + `.ts`)
-				ErrHandle(err)
-
-				outputFile, err := os.Create(downloadPath + `/` + vodID + `.ts`)
-				ErrHandle(err)
-				defer outputFile.Close()
-
-				_, err = io.Copy(outputFile, inputFile)
-				ErrHandle(err)
-
-				err = inputFile.Close()
-				ErrHandle(err)
-			}
 		}
 
 		progressBar.SetValue(1)
-		_ = beeep.Alert(title, "Download Complete", dirThumb+"/"+vodID+".jpg")
+		//_ = beeep.Alert(title, "Download Complete", queue[nowProgress].Thumb)
 
-		queue[0].Done = true
+		queue[nowProgress].Done = true
 
-		ClearDir(tempDirectory)
+		ClearDir(queue[nowProgress].TempDir)
 
 		status.SetText(LoadLang("downloadComplete"))
 
 		OpenURL(downloadPath)
+
+		nowProgress++
 	}()
 }
 
@@ -1973,7 +1834,7 @@ func Advanced(w2 fyne.Window) fyne.CanvasObject { // 설정
 }
 
 //AddQueue 대기열 추가
-func AddQueue(count int, title, vodid, time, thumb, ssFFmpeg, toFFmpeg string, prog *widget.ProgressBar, status *widget.Label, progStatus *widget.Entry, cmd *exec.Cmd) {
+func AddQueue(download string, interval, intervalStart, intervalEnd bool, title, vodid, time string, timeInt int, thumb, tempDir, ssFFmpeg, toFFmpeg string, prog *widget.ProgressBar, status *widget.Label, progStatus *widget.Entry, cmd *exec.Cmd) {
 	defer Recover() // 복구
 
 	fmt.Println("--- 대기열 추가")
@@ -1995,18 +1856,47 @@ func AddQueue(count int, title, vodid, time, thumb, ssFFmpeg, toFFmpeg string, p
 	out.Close()
 	resp.Body.Close()
 
-	queue[count] = &QueueInfo{
-		ID:         vodid,
-		Title:      title,
-		Time:       time,
-		Thumb:      fmt.Sprintf("%s/%s.jpg", dirThumb, vodid),
-		SSFFmpeg:   ssFFmpeg,
-		ToFFmpeg:   toFFmpeg,
-		Progress:   prog,
-		ProgStatus: progStatus,
-		Status:     status,
-		CMD:        cmd,
+	count := -1
+
+	for i := range queue {
+		count = i
 	}
+
+	count++
+
+	fmt.Printf("대기열 카운트: %d\n", count)
+
+	var queueDownloadOption int
+
+	switch download {
+	case "Multi":
+		queueDownloadOption = 0
+	case "Single":
+		queueDownloadOption = 1
+	default:
+		queueDownloadOption = 0
+	}
+
+	queue[count] = &QueueInfo{
+		Download:      queueDownloadOption,
+		Interval:      interval,
+		IntervalStart: intervalStart,
+		IntervalEnd:   intervalEnd,
+		ID:            vodid,
+		Title:         title,
+		Time:          time,
+		TimeInt:       timeInt,
+		Thumb:         fmt.Sprintf("%s/%s.jpg", dirThumb, vodid),
+		TempDir:       tempDir,
+		SSFFmpeg:      ssFFmpeg,
+		ToFFmpeg:      toFFmpeg,
+		Progress:      prog,
+		ProgStatus:    progStatus,
+		StatusLabel:   status,
+		CMD:           cmd,
+	}
+
+	AddQueueCount(count)
 }
 
 //MoreView 대기열 창
@@ -2038,6 +1928,7 @@ func MoreView() (*widget.Group, *fyne.Container) {
 	go func() {
 		for {
 			if checkClipboard {
+				fmt.Printf("클립보드: %s\n", w.Clipboard().Content())
 				clpStatus, clp := KeyCheckRealTime(w.Clipboard().Content())
 
 				if clpStatus {

@@ -419,20 +419,24 @@ func main() { // 메인
 
 		w = a.NewWindow(title)
 		w.SetMainMenu(mainMenu)
-		w.CenterOnScreen()
-		w.SetFixedSize(false)
+		w.SetFixedSize(true)
 		w.SetIcon(appInfo.icon)
 		w.SetTitle(title)
 		w.SetContent(mainContent)
 		w.SetMaster()
 		w.Resize(fyne.NewSize(500, 550))
+		w.CenterOnScreen()
 
 		w.SetOnClosed(func() { // 강제 종료
 			if len(queue) != 0 {
 				fmt.Println("Quit: Forced")
 				for _, cmdProgress := range queue {
-					err = cmdProgress.CMD.Process.Kill()
-					ErrHandle(err)
+					if !cmdProgress.Done {
+						err = cmdProgress.CMD.Process.Kill()
+						if err != nil {
+							continue
+						}
+					}
 				}
 			}
 
