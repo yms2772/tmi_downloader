@@ -20,8 +20,7 @@ type TMI struct {
 //Status 업데이트 정보 구조체
 type Status struct {
 	Version string `json:"version"`
-	NoteKO  string `json:"note_ko"`
-	NoteEN  string `json:"note_en"`
+	Force   bool   `json:"force"`
 }
 
 //TwitchVOD Twitch v5 Videos Reference - Get Video 구조체

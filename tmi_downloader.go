@@ -175,7 +175,7 @@ func main() { // 메인
 
 		splWindow.SetContent(SplBox(LoadLang("loadProgram"), logoImage))
 
-		needUpdate, newVersion := CheckUpdate()
+		needUpdate, newVersion, needForced := CheckUpdate()
 		if !updateFlag {
 			needUpdate = false
 		}
@@ -449,16 +449,33 @@ func main() { // 메인
 			if a.Preferences().String("ignore_version") != newVersion {
 				u, _ := url.Parse("https://notice.tmi.tips/TDownloader/")
 
-				updateContent := widget.NewGroup(LoadLang("foundNewVersion"),
-					widget.NewLabel("아래 링크에서 자세한 내용 확인하실 수 있습니다"),
-					widget.NewHyperlink("https://notice.tmi.tips/TDownloader/", u),
-				)
+				if needForced {
+					updateContent := widget.NewGroup("필수 업데이트 버전",
+						widget.NewLabel("아래 링크에서 자세한 내용 확인하실 수 있습니다"),
+						widget.NewHyperlink("https://notice.tmi.tips/TDownloader/", u),
+						widget.NewLabel(""),
+						widget.NewLabel("* 이번 버전은 중요도가 높으므로 업데이트를 필수로 해야 합니다"),
+					)
 
-				dialog.ShowCustomConfirm(title, "OK", "이번 업데이트 무시하기", updateContent, func(c bool) {
-					if !c {
-						a.Preferences().SetString("ignore_version", newVersion)
-					}
-				}, w)
+					dialog.ShowCustomConfirm(title, "이동", "종료", updateContent, func(c bool) {
+						if c {
+							OpenURL("https://notice.tmi.tips/TDownloader/")
+						}
+
+						os.Exit(0)
+					}, w)
+				} else {
+					updateContent := widget.NewGroup(LoadLang("foundNewVersion"),
+						widget.NewLabel("아래 링크에서 자세한 내용 확인하실 수 있습니다"),
+						widget.NewHyperlink("https://notice.tmi.tips/TDownloader/", u),
+					)
+
+					dialog.ShowCustomConfirm(title, "OK", "이번 업데이트 무시하기", updateContent, func(c bool) {
+						if !c {
+							a.Preferences().SetString("ignore_version", newVersion)
+						}
+					}, w)
+				}
 			}
 		}
 
