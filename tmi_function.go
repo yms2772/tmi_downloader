@@ -1165,6 +1165,7 @@ func (e *enterEntry) onEnter() {
 		}
 
 		vodTime := strconv.Itoa(vodTimeInt) // 대기열
+		vodFilename := fmt.Sprintf("%s_%s", vodID, vodTitle)
 
 		vodHour := vodTimeInt / 3600
 		vodMinute := (vodTimeInt - (3600 * vodHour)) / 60
@@ -1322,6 +1323,8 @@ func (e *enterEntry) onEnter() {
 					dialog.ShowError(fmt.Errorf("%s는 사용할 수 없는 문자입니다", ignore), intervalW)
 
 					break
+				} else {
+					vodFilename = s
 				}
 			}
 		}
@@ -1352,7 +1355,7 @@ func (e *enterEntry) onEnter() {
 		})
 
 		intervalW.SetContent(content)
-		intervalW.Resize(fyne.NewSize(500, 280))
+		intervalW.Resize(fyne.NewSize(530, 280))
 		intervalW.SetIcon(theme.SettingsIcon())
 		intervalW.SetFixedSize(true)
 		intervalW.CenterOnScreen()
@@ -1397,13 +1400,13 @@ func (e *enterEntry) onEnter() {
 		progressStatus := widget.NewEntry() // 대기열
 		progressStatus.SetText("wait")
 
-		cmd := PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-y", "-i", tempDirectory+`/`+vodID+`.ts`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType)) // 대기열
-		progressBar := widget.NewProgressBar()                                                                                                                                   // 대기열
+		cmd := PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-y", "-i", tempDirectory+`/`+vodID+`.ts`, "-c", "copy", fmt.Sprintf("%s/%s.%s", downloadPath, vodFilename, encodingType))) // 대기열
+		progressBar := widget.NewProgressBar()                                                                                                                                                            // 대기열
 
 		status := widget.NewLabel("...") // 대기열
 		status.SetText(LoadLang("waitForDownload"))
 
-		AddQueue(downloadOption, interval, intervalStartCheck.Checked, intervalStopCheck.Checked, vodTitle, vodID, vodTime, vodTimeInt, vodThumbnail, tempDirectory, ssFFmpeg, toFFmpeg, progressBar, status, progressStatus, cmd)
+		AddQueue(downloadOption, interval, intervalStartCheck.Checked, intervalStopCheck.Checked, vodTitle, vodID, vodTime, vodTimeInt, vodThumbnail, tempDirectory, fmt.Sprintf("%s/%s.%s", downloadPath, vodFilename, encodingType), ssFFmpeg, toFFmpeg, progressBar, status, progressStatus, cmd)
 
 		e.Entry.SetText("")
 		progRun.Hide()
@@ -1702,9 +1705,9 @@ func (e *enterEntry) onEnter() {
 				if queue[nowProgress].Interval {
 					fmt.Println("Interval: " + queue[nowProgress].SSFFmpeg + " ~ " + queue[nowProgress].ToFFmpeg)
 
-					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-ss", queue[nowProgress].SSFFmpeg, "-to", queue[nowProgress].ToFFmpeg, "-i", queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
+					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-ss", queue[nowProgress].SSFFmpeg, "-to", queue[nowProgress].ToFFmpeg, "-i", queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, "-c", "copy", queue[nowProgress].FileName))
 				} else {
-					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-i", queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
+					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-i", queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, "-c", "copy", queue[nowProgress].FileName))
 				}
 
 				stderr, err := queue[nowProgress].CMD.StderrPipe()
@@ -1736,18 +1739,18 @@ func (e *enterEntry) onEnter() {
 			}
 		}
 
+		nowProgress++
+
 		progressBar.SetValue(1)
 		//_ = beeep.Alert(title, "Download Complete", queue[nowProgress].Thumb)
 
-		queue[nowProgress].Done = true
+		queue[nowProgress-1].Done = true
 
-		ClearDir(queue[nowProgress].TempDir)
+		ClearDir(queue[nowProgress-1].TempDir)
 
 		status.SetText(LoadLang("downloadComplete"))
 
 		OpenURL(downloadPath)
-
-		nowProgress++
 	}()
 }
 
@@ -1908,7 +1911,7 @@ func Advanced(w2 fyne.Window) fyne.CanvasObject { // 설정
 }
 
 //AddQueue 대기열 추가
-func AddQueue(download string, interval, intervalStart, intervalEnd bool, title, vodid, time string, timeInt int, thumb, tempDir, ssFFmpeg, toFFmpeg string, prog *widget.ProgressBar, status *widget.Label, progStatus *widget.Entry, cmd *exec.Cmd) {
+func AddQueue(download string, interval, intervalStart, intervalEnd bool, title, vodid, time string, timeInt int, thumb, tempDir, filename, ssFFmpeg, toFFmpeg string, prog *widget.ProgressBar, status *widget.Label, progStatus *widget.Entry, cmd *exec.Cmd) {
 	defer Recover() // 복구
 
 	fmt.Println("--- 대기열 추가")
@@ -1962,6 +1965,7 @@ func AddQueue(download string, interval, intervalStart, intervalEnd bool, title,
 		TimeInt:       timeInt,
 		Thumb:         fmt.Sprintf("%s/%s.jpg", dirThumb, vodid),
 		TempDir:       tempDir,
+		FileName:      filename,
 		SSFFmpeg:      ssFFmpeg,
 		ToFFmpeg:      toFFmpeg,
 		Progress:      prog,

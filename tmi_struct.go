@@ -81,6 +81,7 @@ type QueueInfo struct {
 	TimeInt       int
 	Thumb         string
 	TempDir       string
+	FileName      string
 	SSFFmpeg      string
 	ToFFmpeg      string
 	Progress      *widget.ProgressBar
