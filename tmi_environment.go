@@ -23,7 +23,7 @@ const ( // API
 )
 
 var ( // Main 변수
-	version        = "0630"
+	version        = "0702"
 	title          = "TMI Downloader"
 	dirTemp        string
 	dirBin         = VarOS("dirBin")
@@ -64,13 +64,13 @@ var ( // Twitch OAuth2 Info
 )
 
 var ( // Function 변수
-	debugLog                                             *os.File
-	helixClient                                          *helix.Client
-	intervalCheck, intervalStartCheck, intervalStopCheck *widget.Check
-	keyEntry                                             *enterEntry
-	a                                                    fyne.App
-	splWindow, w                                         fyne.Window
-	bot                                                  *tgbotapi.BotAPI
-	queueContent                                         *widget.Group
-	mainContent                                          *fyne.Container
+	debugLog                              *os.File
+	helixClient                           *helix.Client
+	intervalStartCheck, intervalStopCheck *widget.Check
+	keyEntry                              *enterEntry
+	a                                     fyne.App
+	splWindow, w                          fyne.Window
+	bot                                   *tgbotapi.BotAPI
+	queueContent                          *widget.Group
+	mainContent                           *fyne.Container
 )

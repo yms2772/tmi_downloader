@@ -27,9 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"fyne.io/fyne/canvas"
-
 	"fyne.io/fyne"
+	"fyne.io/fyne/canvas"
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/layout"
 	"fyne.io/fyne/theme"
@@ -340,7 +339,7 @@ func VarOS(s string) string {
 }
 
 //CheckUpdate 업데이트 체크
-func CheckUpdate() (bool, string) {
+func CheckUpdate() (bool, string, bool) {
 	defer Recover() // 복구
 
 	body, err := JsonParse("https://dl.tmi.tips/bin/tmi_downloader.json")
@@ -355,10 +354,10 @@ func CheckUpdate() (bool, string) {
 	if newVersion != version {
 		fmt.Println("New version found")
 
-		return true, newVersion
+		return true, newVersion, tmiStatus.Force
 	}
 
-	return false, newVersion
+	return false, newVersion, false
 }
 
 //HandleRoot Twitch OAuth2
@@ -1063,6 +1062,32 @@ func CheckIsExist(id string) bool {
 	return false
 }
 
+func GetTimeLists(hours, mins, secs int) ([]string, []string, []string, []string, []string) {
+	var hourLists, minLists, secLists, startMinLists, startSecLists []string
+
+	for hour := 0; hour <= hours; hour++ {
+		hourLists = append(hourLists, fmt.Sprintf("%.2d", hour))
+	}
+
+	for min := 0; min <= mins; min++ {
+		minLists = append(minLists, fmt.Sprintf("%.2d", min))
+	}
+
+	for sec := 0; sec <= secs; sec++ {
+		secLists = append(secLists, fmt.Sprintf("%.2d", sec))
+	}
+
+	for min := 0; min <= 59; min++ {
+		startMinLists = append(startMinLists, fmt.Sprintf("%.2d", min))
+	}
+
+	for sec := 0; sec <= 59; sec++ {
+		startSecLists = append(startSecLists, fmt.Sprintf("%.2d", sec))
+	}
+
+	return startMinLists, startSecLists, hourLists, minLists, secLists
+}
+
 func (e *enterEntry) onEnter() {
 	defer Recover() // 복구
 
@@ -1072,7 +1097,6 @@ func (e *enterEntry) onEnter() {
 		}
 
 		ShowWindow(true)
-		intervalCheck.SetChecked(true)
 
 		progRun := dialog.NewProgressInfinite(title, "영상 불러오는 중...", w)
 		progRun.Show()
@@ -1141,10 +1165,13 @@ func (e *enterEntry) onEnter() {
 		}
 
 		vodTime := strconv.Itoa(vodTimeInt) // 대기열
+		vodFilename := fmt.Sprintf("%s_%s", vodID, vodTitle)
 
 		vodHour := vodTimeInt / 3600
 		vodMinute := (vodTimeInt - (3600 * vodHour)) / 60
 		vodSecond := vodTimeInt - (3600 * vodHour) - (vodMinute * 60)
+
+		vodStartHLists, vodStartMLists, vodHLists, vodMLists, vodSLists := GetTimeLists(vodHour, vodMinute, vodSecond)
 
 		if vodType == "highlight" {
 			downloadOption = "Single"
@@ -1154,160 +1181,192 @@ func (e *enterEntry) onEnter() {
 		var ssFFmpeg, toFFmpeg string
 		var interval bool
 
-		if intervalCheck.Checked { // 구간 설정
-			intervalProg := dialog.NewProgressInfinite(title, LoadLang("setIntervalRange"), w)
-			intervalProg.Show()
+		intervalProg := dialog.NewProgressInfinite(title, LoadLang("setIntervalRange"), w)
+		intervalProg.Show()
 
-			intervalW := fyne.CurrentApp().NewWindow(title)
+		intervalW := a.NewWindow(title)
 
-			startHourSet := widget.NewEntry()
-			startMinSet := widget.NewEntry()
-			startSecSet := widget.NewEntry()
-			stopHourSet := widget.NewEntry()
-			stopMinSet := widget.NewEntry()
-			stopSecSet := widget.NewEntry()
-			startHourSet.Disable()
-			startMinSet.Disable()
-			startSecSet.Disable()
-			stopHourSet.Disable()
-			stopMinSet.Disable()
-			stopSecSet.Disable()
+		startHourSet := widget.NewSelectEntry(vodHLists)
+		startMinSet := widget.NewSelectEntry(vodStartHLists)
+		startSecSet := widget.NewSelectEntry(vodStartMLists)
+		stopHourSet := widget.NewSelectEntry(vodHLists)
+		stopMinSet := widget.NewSelectEntry(vodMLists)
+		stopSecSet := widget.NewSelectEntry(vodSLists)
 
-			intervalStartCheck = widget.NewCheck("", func(c bool) {
-				if c {
-					startHourSet.Enable()
-					startMinSet.Enable()
-					startSecSet.Enable()
-				} else {
-					startHourSet.Disable()
-					startMinSet.Disable()
-					startSecSet.Disable()
-				}
-			})
-			intervalStartCheck.SetChecked(false)
+		startHourSet.Disable()
+		startMinSet.Disable()
+		startSecSet.Disable()
+		stopHourSet.Disable()
+		stopMinSet.Disable()
+		stopSecSet.Disable()
 
-			intervalStopCheck = widget.NewCheck("", func(c bool) {
-				if c {
-					stopHourSet.Enable()
-					stopMinSet.Enable()
-					stopSecSet.Enable()
-				} else {
-					stopHourSet.Disable()
-					stopMinSet.Disable()
-					stopSecSet.Disable()
-				}
-			})
-			intervalStopCheck.SetChecked(false)
+		intervalStartCheck = widget.NewCheck("", func(c bool) {
+			if c {
+				startHourSet.Enable()
+				startMinSet.Enable()
+				startSecSet.Enable()
+			} else {
+				startHourSet.Disable()
+				startMinSet.Disable()
+				startSecSet.Disable()
+			}
+		})
+		intervalStartCheck.SetChecked(false)
 
-			intervalStart := fyne.NewContainerWithLayout(layout.NewGridLayout(7),
-				intervalStartCheck,
-				startHourSet,
-				widget.NewLabel(LoadLang("intervalHour")),
-				startMinSet,
-				widget.NewLabel(LoadLang("intervalMin")),
-				startSecSet,
-				widget.NewLabel(LoadLang("intervalSec")),
-			)
-			intervalStop := fyne.NewContainerWithLayout(layout.NewGridLayout(7),
-				intervalStopCheck,
-				stopHourSet,
-				widget.NewLabel(LoadLang("intervalHour")),
-				stopMinSet,
-				widget.NewLabel(LoadLang("intervalMin")),
-				stopSecSet,
-				widget.NewLabel(LoadLang("intervalSec")),
-			)
+		intervalStopCheck = widget.NewCheck("", func(c bool) {
+			if c {
+				stopHourSet.Enable()
+				stopMinSet.Enable()
+				stopSecSet.Enable()
+			} else {
+				stopHourSet.Disable()
+				stopMinSet.Disable()
+				stopSecSet.Disable()
+			}
+		})
+		intervalStopCheck.SetChecked(false)
 
-			startHourSet.SetText("00")
-			startMinSet.SetText("00")
-			startSecSet.SetText("00")
+		intervalStart := fyne.NewContainerWithLayout(layout.NewGridLayout(7),
+			intervalStartCheck,
+			startHourSet,
+			widget.NewLabel(LoadLang("intervalHour")),
+			startMinSet,
+			widget.NewLabel(LoadLang("intervalMin")),
+			startSecSet,
+			widget.NewLabel(LoadLang("intervalSec")),
+		)
+		intervalStop := fyne.NewContainerWithLayout(layout.NewGridLayout(7),
+			intervalStopCheck,
+			stopHourSet,
+			widget.NewLabel(LoadLang("intervalHour")),
+			stopMinSet,
+			widget.NewLabel(LoadLang("intervalMin")),
+			stopSecSet,
+			widget.NewLabel(LoadLang("intervalSec")),
+		)
 
-			stopHourSet.SetText(fmt.Sprintf("%d", vodHour))
-			stopMinSet.SetText(fmt.Sprintf("%d", vodMinute))
-			stopSecSet.SetText(fmt.Sprintf("%d", vodSecond))
+		startHourSet.SetText("00")
+		startMinSet.SetText("00")
+		startSecSet.SetText("00")
 
-			r, err := regexp.Compile(`\b\d{1,2}\b`)
-			ErrHandle(err)
+		stopHourSet.SetText(fmt.Sprintf("%.2d", vodHour))
+		stopMinSet.SetText(fmt.Sprintf("%.2d", vodMinute))
+		stopSecSet.SetText(fmt.Sprintf("%.2d", vodSecond))
 
-			intervalDone := 0
-			form := &widget.Form{}
+		r, err := regexp.Compile(`\b\d{1,2}\b`)
+		ErrHandle(err)
 
-			form.Append(LoadLang("intervalStart"), intervalStart)
-			form.Append(LoadLang("intervalStop"), intervalStop)
-			form.Append("", layout.NewSpacer())
+		intervalDone := 0
+		intervalForm := &widget.Form{}
 
-			cutBtn := widget.NewButtonWithIcon("자르기", theme.ContentCutIcon(), func() {
-				if !intervalStartCheck.Checked && !intervalStopCheck.Checked {
-					return
-				}
+		intervalForm.Append(LoadLang("intervalStart"), intervalStart)
+		intervalForm.Append(LoadLang("intervalStop"), intervalStop)
+		intervalForm.Append("", layout.NewSpacer())
 
-				isMatchedStartHour := r.MatchString(startHourSet.Text)
-				isMatchedStartMin := r.MatchString(startMinSet.Text)
-				isMatchedStartSec := r.MatchString(startSecSet.Text)
-				isMatchedStopHour := r.MatchString(stopHourSet.Text)
-				isMatchedStopMin := r.MatchString(stopMinSet.Text)
-				isMatchedStopSec := r.MatchString(stopSecSet.Text)
-
-				if !isMatchedStartHour || !isMatchedStartMin || !isMatchedStartSec || !isMatchedStopHour || !isMatchedStopMin || !isMatchedStopSec {
-					dialog.ShowInformation(title, LoadLang("errorLoadTime"), w)
-
-					return
-				} else {
-					ssFFmpeg = fmt.Sprintf("%s:%s:%s", startHourSet.Text, startMinSet.Text, startSecSet.Text)
-					toFFmpeg = fmt.Sprintf("%s:%s:%s", stopHourSet.Text, stopMinSet.Text, stopSecSet.Text)
-				}
-
-				interval = true
-				intervalDone = 1
-				downloadOption = "Single"
-
-				dialog.NewProgressInfinite(title, LoadLang("intervalRangeSaved"), intervalW).Show()
-			})
-
-			cancelBtn := widget.NewButtonWithIcon("전체 다운로드", theme.MoveDownIcon(), func() {
-				dialog.NewProgressInfinite(title, LoadLang("intervalRangeSaved"), intervalW).Show()
-
-				ssFFmpeg = fmt.Sprintf("%s:%s:%s", startHourSet.Text, startMinSet.Text, startSecSet.Text)
-				toFFmpeg = fmt.Sprintf("%s:%s:%s", stopHourSet.Text, stopMinSet.Text, stopSecSet.Text)
-
-				interval = false
-				intervalDone = 1
-				downloadOption = "Multi"
-			})
-
-			btnLayout := widget.NewHBox(
-				layout.NewSpacer(),
-				cancelBtn,
-				cutBtn,
-			)
-
-			content := widget.NewVBox(
-				widget.NewGroup(LoadLang("tabSetting"),
-					form,
-					btnLayout,
-				),
-			)
-
-			intervalW.SetOnClosed(func() {
-				progRun.Hide()
-				intervalProg.Hide()
+		cutBtn := widget.NewButtonWithIcon("자르기", theme.ContentCutIcon(), func() {
+			if !intervalStartCheck.Checked && !intervalStopCheck.Checked {
 				return
-			})
-
-			intervalW.SetContent(content)
-			intervalW.Resize(fyne.NewSize(390, 160))
-			intervalW.SetIcon(theme.SettingsIcon())
-			intervalW.SetFixedSize(true)
-			intervalW.CenterOnScreen()
-			intervalW.Show()
-
-			for intervalDone == 0 {
-				time.Sleep(time.Second)
 			}
 
-			intervalW.Close()
-			intervalProg.Hide()
+			isMatchedStartHour := r.MatchString(startHourSet.Text)
+			isMatchedStartMin := r.MatchString(startMinSet.Text)
+			isMatchedStartSec := r.MatchString(startSecSet.Text)
+			isMatchedStopHour := r.MatchString(stopHourSet.Text)
+			isMatchedStopMin := r.MatchString(stopMinSet.Text)
+			isMatchedStopSec := r.MatchString(stopSecSet.Text)
+
+			if !isMatchedStartHour || !isMatchedStartMin || !isMatchedStartSec || !isMatchedStopHour || !isMatchedStopMin || !isMatchedStopSec {
+				dialog.ShowInformation(title, LoadLang("errorLoadTime"), w)
+
+				return
+			} else {
+				ssFFmpeg = fmt.Sprintf("%s:%s:%s", startHourSet.Text, startMinSet.Text, startSecSet.Text)
+				toFFmpeg = fmt.Sprintf("%s:%s:%s", stopHourSet.Text, stopMinSet.Text, stopSecSet.Text)
+			}
+
+			interval = true
+			intervalDone = 1
+			downloadOption = "Single"
+
+			dialog.NewProgressInfinite(title, LoadLang("intervalRangeSaved"), intervalW).Show()
+		})
+
+		cancelBtn := widget.NewButtonWithIcon("전체 다운로드", theme.MoveDownIcon(), func() {
+			dialog.NewProgressInfinite(title, LoadLang("intervalRangeSaved"), intervalW).Show()
+
+			ssFFmpeg = fmt.Sprintf("%s:%s:%s", startHourSet.Text, startMinSet.Text, startSecSet.Text)
+			toFFmpeg = fmt.Sprintf("%s:%s:%s", stopHourSet.Text, stopMinSet.Text, stopSecSet.Text)
+
+			interval = false
+			intervalDone = 1
+			downloadOption = "Multi"
+		})
+
+		btnLayout := widget.NewHBox(
+			layout.NewSpacer(),
+			cancelBtn,
+			cutBtn,
+		)
+
+		fileForm := &widget.Form{}
+
+		fileNameEntry := widget.NewEntry()
+		fileNameEntry.SetText(fmt.Sprintf("%s_%s", vodID, vodTitle))
+
+		ignores := []string{"\\", "/", "\"", "?", "*", ":", "|", "<", ">"}
+
+		fileNameEntry.OnChanged = func(s string) {
+			for _, ignore := range ignores {
+				if strings.Contains(s, ignore) {
+					fileNameEntry.SetText(fmt.Sprintf("%s_%s", vodID, vodTitle))
+
+					dialog.ShowError(fmt.Errorf("%s는 사용할 수 없는 문자입니다", ignore), intervalW)
+
+					break
+				} else {
+					vodFilename = s
+				}
+			}
 		}
+
+		fileTypeEntry := widget.NewSelect([]string{"mp4", "avi", "mkv"}, func(s string) {
+			encodingType = s
+		})
+		fileTypeEntry.SetSelected(encodingType)
+
+		fileForm.Append("파일명", fileNameEntry)
+		fileForm.Append("확장자", widget.NewHBox(fileTypeEntry))
+
+		content := widget.NewVBox(
+			widget.NewGroup("파일 설정",
+				fileForm,
+			),
+			widget.NewLabel(""),
+			widget.NewGroup("구간 설정",
+				intervalForm,
+				btnLayout,
+			),
+		)
+
+		intervalW.SetOnClosed(func() {
+			progRun.Hide()
+			intervalProg.Hide()
+			return
+		})
+
+		intervalW.SetContent(content)
+		intervalW.Resize(fyne.NewSize(530, 280))
+		intervalW.SetIcon(theme.SettingsIcon())
+		intervalW.SetFixedSize(true)
+		intervalW.CenterOnScreen()
+		intervalW.Show()
+
+		for intervalDone == 0 {
+			time.Sleep(time.Second)
+		}
+
+		intervalW.Close()
+		intervalProg.Hide()
 
 		tsInt, err := TsFinder(vodToken)
 
@@ -1341,13 +1400,13 @@ func (e *enterEntry) onEnter() {
 		progressStatus := widget.NewEntry() // 대기열
 		progressStatus.SetText("wait")
 
-		cmd := PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-y", "-i", tempDirectory+`/`+vodID+`.ts`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType)) // 대기열
-		progressBar := widget.NewProgressBar()                                                                                                                                   // 대기열
+		cmd := PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, "-y", "-i", tempDirectory+`/`+vodID+`.ts`, "-c", "copy", fmt.Sprintf("%s/%s.%s", downloadPath, vodFilename, encodingType))) // 대기열
+		progressBar := widget.NewProgressBar()                                                                                                                                                            // 대기열
 
 		status := widget.NewLabel("...") // 대기열
 		status.SetText(LoadLang("waitForDownload"))
 
-		AddQueue(downloadOption, interval, intervalStartCheck.Checked, intervalStopCheck.Checked, vodTitle, vodID, vodTime, vodTimeInt, vodThumbnail, tempDirectory, ssFFmpeg, toFFmpeg, progressBar, status, progressStatus, cmd)
+		AddQueue(downloadOption, interval, intervalStartCheck.Checked, intervalStopCheck.Checked, vodTitle, vodID, vodTime, vodTimeInt, vodThumbnail, tempDirectory, fmt.Sprintf("%s/%s.%s", downloadPath, vodFilename, encodingType), ssFFmpeg, toFFmpeg, progressBar, status, progressStatus, cmd)
 
 		e.Entry.SetText("")
 		progRun.Hide()
@@ -1646,9 +1705,9 @@ func (e *enterEntry) onEnter() {
 				if queue[nowProgress].Interval {
 					fmt.Println("Interval: " + queue[nowProgress].SSFFmpeg + " ~ " + queue[nowProgress].ToFFmpeg)
 
-					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-ss", queue[nowProgress].SSFFmpeg, "-to", queue[nowProgress].ToFFmpeg, "-i", queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
+					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-ss", queue[nowProgress].SSFFmpeg, "-to", queue[nowProgress].ToFFmpeg, "-i", queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, "-c", "copy", queue[nowProgress].FileName))
 				} else {
-					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-i", queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, "-c", "copy", downloadPath+`/`+vodID+`.`+encodingType))
+					queue[nowProgress].CMD = PrepareBackgroundCommand(exec.Command(dirBin+"/"+ffmpegBinary, `-y`, `-protocol_whitelist`, `file,http,https,tcp,tls,crypto`, "-i", queue[nowProgress].TempDir+`/index-dvr_fixed.m3u8`, "-c", "copy", queue[nowProgress].FileName))
 				}
 
 				stderr, err := queue[nowProgress].CMD.StderrPipe()
@@ -1680,18 +1739,18 @@ func (e *enterEntry) onEnter() {
 			}
 		}
 
+		nowProgress++
+
 		progressBar.SetValue(1)
 		//_ = beeep.Alert(title, "Download Complete", queue[nowProgress].Thumb)
 
-		queue[nowProgress].Done = true
+		queue[nowProgress-1].Done = true
 
-		ClearDir(queue[nowProgress].TempDir)
+		ClearDir(queue[nowProgress-1].TempDir)
 
 		status.SetText(LoadLang("downloadComplete"))
 
 		OpenURL(downloadPath)
-
-		nowProgress++
 	}()
 }
 
@@ -1707,6 +1766,8 @@ func (e *enterEntry) KeyDown(key *fyne.KeyEvent) {
 //Advanced 설정
 func Advanced(w2 fyne.Window) fyne.CanvasObject { // 설정
 	defer Recover() // 복구
+
+	rootDirRegexp, _ := regexp.Compile(`\w:\\.+`)
 
 	defLang := widget.NewRadio([]string{"English", "Korean"}, func(langOption string) {})
 
@@ -1725,6 +1786,14 @@ func Advanced(w2 fyne.Window) fyne.CanvasObject { // 설정
 			selDownDir, err := dlog.Directory().Title(title).Browse()
 			if err == nil {
 				if len(selDownDir) != 0 {
+					if !rootDirRegexp.MatchString(selDownDir) {
+						dialog.ShowError(fmt.Errorf("%s는 루트 폴더입니다\n%stmi에 저장됩니다", selDownDir, selDownDir), w2)
+
+						selDownDir = fmt.Sprintf("%stmi", selDownDir)
+
+						_ = os.MkdirAll(selDownDir, 0777)
+					}
+
 					a.Preferences().SetString("downloadDir", selDownDir)
 
 					defDownDirEntry.SetText(selDownDir)
@@ -1740,6 +1809,14 @@ func Advanced(w2 fyne.Window) fyne.CanvasObject { // 설정
 			selTempDir, err := dlog.Directory().Title(title).Browse()
 			if err == nil {
 				if len(selTempDir) != 0 {
+					if !rootDirRegexp.MatchString(selTempDir) {
+						dialog.ShowError(fmt.Errorf("%s는 루트 폴더입니다\n%stmi에 저장됩니다", selTempDir, selTempDir), w2)
+
+						selTempDir = fmt.Sprintf("%stmi", selTempDir)
+
+						_ = os.MkdirAll(selTempDir, 0777)
+					}
+
 					a.Preferences().SetString("dir_temp", selTempDir)
 
 					dirTemp = selTempDir
@@ -1834,7 +1911,7 @@ func Advanced(w2 fyne.Window) fyne.CanvasObject { // 설정
 }
 
 //AddQueue 대기열 추가
-func AddQueue(download string, interval, intervalStart, intervalEnd bool, title, vodid, time string, timeInt int, thumb, tempDir, ssFFmpeg, toFFmpeg string, prog *widget.ProgressBar, status *widget.Label, progStatus *widget.Entry, cmd *exec.Cmd) {
+func AddQueue(download string, interval, intervalStart, intervalEnd bool, title, vodid, time string, timeInt int, thumb, tempDir, filename, ssFFmpeg, toFFmpeg string, prog *widget.ProgressBar, status *widget.Label, progStatus *widget.Entry, cmd *exec.Cmd) {
 	defer Recover() // 복구
 
 	fmt.Println("--- 대기열 추가")
@@ -1888,6 +1965,7 @@ func AddQueue(download string, interval, intervalStart, intervalEnd bool, title,
 		TimeInt:       timeInt,
 		Thumb:         fmt.Sprintf("%s/%s.jpg", dirThumb, vodid),
 		TempDir:       tempDir,
+		FileName:      filename,
 		SSFFmpeg:      ssFFmpeg,
 		ToFFmpeg:      toFFmpeg,
 		Progress:      prog,
@@ -1918,8 +1996,6 @@ func MoreView() (*widget.Group, *fyne.Container) {
 			keyEntry.SetText("")
 		}
 	}
-	intervalCheck = widget.NewCheck(LoadLang("intervalDownload"), func(c bool) {})
-	intervalCheck.Show()
 
 	// 클립보드 자동 감지
 	checkClipboard = false
@@ -1928,7 +2004,6 @@ func MoreView() (*widget.Group, *fyne.Container) {
 	go func() {
 		for {
 			if checkClipboard {
-				fmt.Printf("클립보드: %s\n", w.Clipboard().Content())
 				clpStatus, clp := KeyCheckRealTime(w.Clipboard().Content())
 
 				if clpStatus {
