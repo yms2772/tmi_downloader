@@ -127,6 +127,7 @@ func main() { // 메인
 	a.Settings().SetTheme(NewCustomTheme())
 
 	dirTemp = a.Preferences().StringWithFallback("dir_temp", VarOS("dirTemp"))
+	dirThumb = dirTemp + "/thumb"
 
 	drv := a.Driver().(desktop.Driver)
 
@@ -158,7 +159,7 @@ func main() { // 메인
 			splWindow.SetContent(SplBox(LoadLang("downloadNecessary"), logoImage))
 
 			if _, err := os.Stat(dirBin + "/" + ffmpegBinary); os.IsNotExist(err) {
-				out, resp, _ := Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL) // ffmpeg 다운로드
+				out, resp, _ := Download(dirBin+`/ffmpeg.tar.gz`, 0, ffmpegURL) // ffmpeg 다운로드
 				out.Close()
 				resp.Body.Close()
 
@@ -363,7 +364,7 @@ func main() { // 메인
 				prog.SetValue(0.5)
 				prog.Show()
 
-				out, resp, _ := Download(dirBin+`/ffmpeg.tar.gz`, ffmpegURL)
+				out, resp, _ := Download(dirBin+`/ffmpeg.tar.gz`, 0, ffmpegURL)
 				out.Close()
 				resp.Body.Close()
 

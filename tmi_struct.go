@@ -19,6 +19,7 @@ type TMI struct {
 
 //Status 업데이트 정보 구조체
 type Status struct {
+	Code    int    `json:"code"`
 	Version string `json:"version"`
 	Force   bool   `json:"force"`
 }
@@ -70,7 +71,8 @@ type enterEntry struct {
 
 type QueueInfo struct {
 	Done          bool
-	Download      int // 0: Multi, 1: Single
+	Download      int   // 0: Multi, 1: Single
+	QoS           int64 // bytes per second
 	Interval      bool
 	IntervalStart bool
 	IntervalEnd   bool
