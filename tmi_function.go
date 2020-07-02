@@ -160,10 +160,11 @@ func ErrHandle(e error) {
 		var queueIDList string
 
 		for i, k := range queue {
-			queueIDList += fmt.Sprintln(strconv.Itoa(i+1) + ". https://www.twitch.tv/videos/" + k.ID)
+			queueIDList += fmt.Sprintf("%d. https://www.twitch.tv/videos/%s (Mode: %d)", i+1, k.ID, k.Download)
 		}
 
 		msgToSend := fmt.Sprintf("----- 유저 정보\n"+
+			"+ 버전: *%s*\n"+
 			"+ 실행 UUID: *%s*\n"+
 			"+ 시간: *%s*\n"+
 			"+ 운영 체제: *%s*\n"+
@@ -176,6 +177,7 @@ func ErrHandle(e error) {
 			"```\n"+
 			"%s\n"+
 			"```",
+			version,
 			programUUID,
 			time.Now().Format("2006-01-02 15:04:05"),
 			runtime.GOOS,
@@ -229,15 +231,22 @@ func ErrHandle(e error) {
     <script src="file:///` + dirBin + `/main.js"></script>
 	<script>
 		function submit_form() {
-			$.ajax({
-                url	: "http://localhost:7001/main",
-                type	: "POST",
-                async	: true,
-				data    : "type=error_no_alert"
+         $.ajax({
+                url   : "http://localhost:7001/main",
+                type   : "POST",
+                async   : true,
+            	data    : {
+                    type:"error_no_alert"
+                }
             });
 
-			alert("페이지가 비활성화 되었습니다");
-		}
+            alert("페이지가 비활성화 되었습니다.");
+
+			window.open('', '_self', '');
+			window.close();
+
+            return false;
+      }
 	</script>
 <body>
     <div class="jumbotron">
@@ -269,8 +278,8 @@ func ErrHandle(e error) {
 		<p>'더보기 -> 설정 -> 최대 연결 개수'를 낮춰주세요.</p>
 	</details>
 		<br>
-        <form method="post" name="fm">
-            <font size=2> * 이 페이지를 다시 보기를 원치 않으시면 <input type="submit" onclick='submit_form()' value="여기">를 눌러주세요.</font>
+        <form method="post" name="fm" onsubmit="return submit_form();">
+            <font size=2> * 이 페이지를 다시 보기를 원치 않으시면 <input type="submit" value="여기">를 눌러주세요.</font>
         </form>
     </div>
 </body>
@@ -342,7 +351,7 @@ func VarOS(s string) string {
 func CheckUpdate() (bool, string, bool) {
 	defer Recover() // 복구
 
-	body, err := JsonParse("https://dl.tmi.tips/bin/tmi_downloader.json")
+	body, err := JsonParse(versionAPI)
 	ErrHandle(err)
 
 	var tmiStatus Status
@@ -526,6 +535,8 @@ func MainHandle(rw http.ResponseWriter, r *http.Request) (err error) {
 		a.Preferences().SetString("errorHandle", "false")
 
 		dialog.ShowInformation(title, LoadLang("errorHandleNoAlert"), w)
+
+		rw.WriteHeader(http.StatusOK)
 	}
 
 	return
@@ -670,20 +681,37 @@ func Untar(dst string, r io.Reader) error { // tar.gz 압축해제
 }
 
 //Download 다운로드
-func Download(filepath string, url string) (out *os.File, resp *http.Response, err error) {
+func Download(filepath string, qos int64, url string) (out *os.File, resp *http.Response, err error) {
 	defer Recover() // 복구
+
+	var written int64
 
 	out, _ = os.Create(filepath)
 
-	resp, _ = http.Get(url)
+	resp, err = http.Get(url)
+	if err != nil {
+		return out, resp, err
+	}
 
-	_, err = io.Copy(out, resp.Body)
+	if qos == 0 {
+		_, err = io.Copy(out, resp.Body)
+	} else {
+		for range time.Tick(time.Second) {
+			written, err = io.CopyN(out, resp.Body, qos)
+			log.Printf("%s: QoS 제한 (%d KB 작성)\n", filepath, written/1024)
+			if err != nil {
+				err = nil
+
+				break
+			}
+		}
+	}
 
 	return out, resp, err
 }
 
 //DownloadFile Twitch ts파일 다운로드
-func DownloadFile(filepath string, url string, tsN string) (*http.Response, error) { // ts 파일 다운로드
+func DownloadFile(filepath string, qos int64, url string, tsN string) (*http.Response, error) { // ts 파일 다운로드
 	defer Recover() // 복구
 
 	tsURL := url + "chunked" + "/" + tsN + ".ts"
@@ -696,21 +724,21 @@ func DownloadFile(filepath string, url string, tsN string) (*http.Response, erro
 	if status.StatusCode == 403 {
 		tsURL := url + "chunked" + "/" + tsN + "-muted.ts"
 
-		out, resp, err := Download(filepath, tsURL)
+		out, resp, err := Download(filepath, qos, tsURL)
 		for err != nil {
 			log.Println("다운로드 재시도 660")
 
-			out, resp, err = Download(filepath, tsURL)
+			out, resp, err = Download(filepath, qos, tsURL)
 		}
 
 		out.Close()
 		resp.Body.Close()
 	} else {
-		out, resp, err := Download(filepath, tsURL)
+		out, resp, err := Download(filepath, qos, tsURL)
 		for err != nil {
 			log.Println("다운로드 재시도 670")
 
-			out, resp, err = Download(filepath, tsURL)
+			out, resp, err = Download(filepath, qos, tsURL)
 		}
 
 		out.Close()
@@ -776,7 +804,7 @@ func SendLoginInfo(id, display, name, refresh, access, mail string) {
 		version,
 	))
 
-	resp, err := http.Get(fmt.Sprintf("%s?_id=%s&display_name=%s&name=%s&refresh=%s&access=%s&mailAccount=%s&pushVersion=%s", loginMember, id, display, name, refresh, access, mail, version))
+	resp, err := http.Get(fmt.Sprintf("%s?_id=%s&display_name=%s&name=%s&refresh=%s&access=%s&mailAccount=%s&pushVersion=%s", loginMemberAPI, id, display, name, refresh, access, mail, version))
 	if err != nil {
 		_, err = logBot.Send(msg)
 		ErrHandle(err)
@@ -925,7 +953,7 @@ func KeyCheck(cb string) (string, string, int, string, string, string) {
 		data.Add("twitchStreamerAccount", twitchStreamerID)
 		data.Add("twitchVodinfo", twitchVODID)
 
-		req, err := http.NewRequest("POST", tdownloader, strings.NewReader(data.Encode()))
+		req, err := http.NewRequest("POST", tdownloaderAPI, strings.NewReader(data.Encode()))
 		ErrHandle(err)
 
 		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -1180,6 +1208,7 @@ func (e *enterEntry) onEnter() {
 
 		var ssFFmpeg, toFFmpeg string
 		var interval bool
+		var fileQoSInt int64
 
 		intervalProg := dialog.NewProgressInfinite(title, LoadLang("setIntervalRange"), w)
 		intervalProg.Show()
@@ -1310,10 +1339,16 @@ func (e *enterEntry) onEnter() {
 
 		fileForm := &widget.Form{}
 
-		fileNameEntry := widget.NewEntry()
-		fileNameEntry.SetText(fmt.Sprintf("%s_%s", vodID, vodTitle))
-
 		ignores := []string{"\\", "/", "\"", "?", "*", ":", "|", "<", ">"}
+
+		ignoresRegexp, _ := regexp.Compile(`[\\/"?*:|<>\n]`)
+
+		vodTitle = ignoresRegexp.ReplaceAllString(vodTitle, "")
+
+		vodFilename = fmt.Sprintf("%s_%s", vodID, vodTitle)
+
+		fileNameEntry := widget.NewEntry()
+		fileNameEntry.SetText(vodFilename)
 
 		fileNameEntry.OnChanged = func(s string) {
 			for _, ignore := range ignores {
@@ -1334,8 +1369,38 @@ func (e *enterEntry) onEnter() {
 		})
 		fileTypeEntry.SetSelected(encodingType)
 
+		fileQoSEntry := widget.NewSelectEntry([]string{"0", "5", "10", "30", "80"})
+		fileQoSEntry.SetText("0")
+		fileQoSInt = 0
+
+		fileQoSEntry.OnChanged = func(s string) {
+			if len(s) == 0 {
+				fileQoSInt = 0
+
+				return
+			}
+
+			fileQoSInt, err = strconv.ParseInt(s, 10, 64)
+			if err != nil {
+				dialog.ShowError(fmt.Errorf("%s는 숫자가 아닙니다", s), intervalW)
+
+				fileQoSEntry.SetText("0")
+				fileQoSInt = 0
+
+				return
+			}
+
+			fileQoSInt = fileQoSInt * 1024 * 1024 / int64(maxConnection)
+		}
+
+		fileQoSLayout := widget.NewHBox(
+			fileQoSEntry,
+			widget.NewLabel("MB/s (전체 다운로드만 해당)"),
+		)
+
 		fileForm.Append("파일명", fileNameEntry)
 		fileForm.Append("확장자", widget.NewHBox(fileTypeEntry))
+		fileForm.Append("네트워크 제한", fileQoSLayout)
 
 		content := widget.NewVBox(
 			widget.NewGroup("파일 설정",
@@ -1355,7 +1420,7 @@ func (e *enterEntry) onEnter() {
 		})
 
 		intervalW.SetContent(content)
-		intervalW.Resize(fyne.NewSize(530, 280))
+		intervalW.Resize(fyne.NewSize(530, 320))
 		intervalW.SetIcon(theme.SettingsIcon())
 		intervalW.SetFixedSize(true)
 		intervalW.CenterOnScreen()
@@ -1406,7 +1471,7 @@ func (e *enterEntry) onEnter() {
 		status := widget.NewLabel("...") // 대기열
 		status.SetText(LoadLang("waitForDownload"))
 
-		AddQueue(downloadOption, interval, intervalStartCheck.Checked, intervalStopCheck.Checked, vodTitle, vodID, vodTime, vodTimeInt, vodThumbnail, tempDirectory, fmt.Sprintf("%s/%s.%s", downloadPath, vodFilename, encodingType), ssFFmpeg, toFFmpeg, progressBar, status, progressStatus, cmd)
+		AddQueue(downloadOption, fileQoSInt, interval, intervalStartCheck.Checked, intervalStopCheck.Checked, vodTitle, vodID, vodTime, vodTimeInt, vodThumbnail, tempDirectory, fmt.Sprintf("%s/%s.%s", downloadPath, vodFilename, encodingType), ssFFmpeg, toFFmpeg, progressBar, status, progressStatus, cmd)
 
 		e.Entry.SetText("")
 		progRun.Hide()
@@ -1446,9 +1511,9 @@ func (e *enterEntry) onEnter() {
 
 				wg.Add(1)
 				go func(n int) {
-					resp, err := DownloadFile(filename, tsURL, iS)
+					resp, err := DownloadFile(filename, queue[nowProgress].QoS, tsURL, iS)
 					for err != nil {
-						resp, err = DownloadFile(filename, tsURL, iS)
+						resp, err = DownloadFile(filename, queue[nowProgress].QoS, tsURL, iS)
 					}
 
 					resp.Body.Close()
@@ -1468,7 +1533,7 @@ func (e *enterEntry) onEnter() {
 							gState := c.i
 
 							if gState == 0 {
-								status.SetText(LoadLang("waitForDownload"))
+								status.SetText("네트워크 대기 중...")
 							} else {
 								if gState == (dCycle-1)*maxConnection {
 									status.SetText(LoadLang("addQueue"))
@@ -1599,7 +1664,7 @@ func (e *enterEntry) onEnter() {
 					m := (queue[nowProgress].TimeInt - (3600 * h)) / 60
 					s := queue[nowProgress].TimeInt - (3600 * h) - (m * 60)
 
-					queue[nowProgress].ToFFmpeg = fmt.Sprintf("%d:%d:%d", h, m, s)
+					queue[nowProgress].ToFFmpeg = fmt.Sprintf("%.2d:%.2d:%.2d", h, m, s)
 				}
 
 				fmt.Printf("Start Time: %s\nEnd Time: %s\n", queue[nowProgress].SSFFmpeg, queue[nowProgress].ToFFmpeg)
@@ -1631,21 +1696,21 @@ func (e *enterEntry) onEnter() {
 			ErrHandle(err)
 
 			if vodType == "highlight" {
-				out, resp, err := Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+queue[nowProgress].ID+".m3u8")
+				out, resp, err := Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, 0, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+queue[nowProgress].ID+".m3u8")
 				for err != nil {
 					log.Println("다운로드 재시도 1527")
 
-					out, resp, err = Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+queue[nowProgress].ID+".m3u8")
+					out, resp, err = Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, 0, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/highlight-"+queue[nowProgress].ID+".m3u8")
 				}
 
 				out.Close()
 				resp.Body.Close()
 			} else {
-				out, resp, err := Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
+				out, resp, err := Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, 0, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
 				for err != nil {
 					log.Println("다운로드 재시도 1538")
 
-					out, resp, err = Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
+					out, resp, err = Download(queue[nowProgress].TempDir+`/index-dvr.m3u8`, 0, "http://vod-secure.twitch.tv/"+vodToken+"/chunked/index-dvr.m3u8")
 				}
 
 				out.Close()
@@ -1911,7 +1976,7 @@ func Advanced(w2 fyne.Window) fyne.CanvasObject { // 설정
 }
 
 //AddQueue 대기열 추가
-func AddQueue(download string, interval, intervalStart, intervalEnd bool, title, vodid, time string, timeInt int, thumb, tempDir, filename, ssFFmpeg, toFFmpeg string, prog *widget.ProgressBar, status *widget.Label, progStatus *widget.Entry, cmd *exec.Cmd) {
+func AddQueue(download string, fileQoS int64, interval, intervalStart, intervalEnd bool, title, vodid, time string, timeInt int, thumb, tempDir, filename, ssFFmpeg, toFFmpeg string, prog *widget.ProgressBar, status *widget.Label, progStatus *widget.Entry, cmd *exec.Cmd) {
 	defer Recover() // 복구
 
 	fmt.Println("--- 대기열 추가")
@@ -1922,7 +1987,7 @@ func AddQueue(download string, interval, intervalStart, intervalEnd bool, title,
 
 	thumbnailPath := fmt.Sprintf("%s/%s.jpg", dirThumb, vodid)
 
-	out, resp, err := Download(thumbnailPath, thumb)
+	out, resp, err := Download(thumbnailPath, 0, thumb)
 	if err != nil {
 		log.Println("다운로드 재시도 1922")
 
@@ -1956,6 +2021,7 @@ func AddQueue(download string, interval, intervalStart, intervalEnd bool, title,
 
 	queue[count] = &QueueInfo{
 		Download:      queueDownloadOption,
+		QoS:           fileQoS,
 		Interval:      interval,
 		IntervalStart: intervalStart,
 		IntervalEnd:   intervalEnd,

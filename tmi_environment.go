@@ -18,18 +18,19 @@ const ( // OAuth2 Key 상수
 )
 
 const ( // API
-	tdownloader = "https://api.tmi.tips/request/tdownloader"
-	loginMember = "https://api.tmi.tips/request/LoginMember"
+	tdownloaderAPI = "https://api.tmi.tips/request/tdownloader"
+	loginMemberAPI = "https://api.tmi.tips/request/LoginMember"
+	versionAPI     = "https://api.tmi.tips/request/version"
 )
 
 var ( // Main 변수
-	version        = "0702"
-	title          = "TMI Downloader"
+	version        = "0703"
+	title          = "TMI Downloader ver." + version
 	dirTemp        string
+	dirThumb       string
 	dirBin         = VarOS("dirBin")
 	dirWebFonts    = VarOS("dirWebFonts")
 	dirDefDown     = VarOS("dirDefDown")
-	dirThumb       = dirTemp + "/thumb"
 	ffmpegURL      = VarOS("ffmpegURL")
 	ffmpegBinary   = VarOS("ffmpegBinary")
 	lang           string
