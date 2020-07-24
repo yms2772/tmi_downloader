@@ -1,13 +1,16 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"fyne.io/fyne"
 	"fyne.io/fyne/widget"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/gorilla/sessions"
 	"github.com/nicklaw5/helix"
+
 	"golang.org/x/oauth2"
 )
 
@@ -24,8 +27,8 @@ const ( // API
 )
 
 var ( // Main 변수
-	version        = "0703"
-	title          = "TMI Downloader ver." + version
+	version        = 200703
+	title          = fmt.Sprintf("TMI Downloader ver.%d", version)
 	dirTemp        string
 	dirThumb       string
 	dirBin         = VarOS("dirBin")

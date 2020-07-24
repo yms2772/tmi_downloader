@@ -34,7 +34,6 @@ import (
 	"fyne.io/fyne/theme"
 	"fyne.io/fyne/widget"
 
-	"github.com/dariubs/percent"
 	"github.com/gen2brain/beeep"
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/nicklaw5/helix"
@@ -96,20 +95,20 @@ func WriteResource(file string, resource fyne.Resource) {
 	ErrHandle(err)
 }
 
+func WriteDebug(msgType, msg string) {
+	debugLog.WriteString(fmt.Sprintf("%s [%s] %s", time.Now().Format("2006-01-02 15:04:05"), msgType, msg))
+}
+
 //Recover 복구
 func Recover() {
-	nowTime := time.Now().Format("2006-01-02 15:04:05")
-
-	debugLog.WriteString(fmt.Sprintf("---------- %s\n", nowTime))
-
 	if r := recover(); r != nil {
-		debugLog.WriteString(fmt.Sprintf("[알림] 복구됨\n"))
+		WriteDebug("오류", fmt.Sprintf("Panic 복구됨\n"+
+			"%s", string(debug.Stack()),
+		))
 
 		fmt.Println("Recovered")
 		debug.PrintStack()
 	}
-
-	debugLog.WriteString(fmt.Sprintf("[알림] Pass\n%s\n", string(debug.Stack())))
 
 	log.Println("Pass")
 }
@@ -160,11 +159,11 @@ func ErrHandle(e error) {
 		var queueIDList string
 
 		for i, k := range queue {
-			queueIDList += fmt.Sprintf("%d. https://www.twitch.tv/videos/%s (Mode: %d)", i+1, k.ID, k.Download)
+			queueIDList += fmt.Sprintf("%d. https://www.twitch.tv/videos/%s (Mode: %d)\n", i+1, k.ID, k.Download)
 		}
 
 		msgToSend := fmt.Sprintf("----- 유저 정보\n"+
-			"+ 버전: *%s*\n"+
+			"+ 버전: *%d*\n"+
 			"+ 실행 UUID: *%s*\n"+
 			"+ 시간: *%s*\n"+
 			"+ 운영 체제: *%s*\n"+
@@ -348,11 +347,13 @@ func VarOS(s string) string {
 }
 
 //CheckUpdate 업데이트 체크
-func CheckUpdate() (bool, string, bool) {
+func CheckUpdate() (bool, int, bool) {
 	defer Recover() // 복구
 
 	body, err := JsonParse(versionAPI)
 	ErrHandle(err)
+
+	fmt.Println(string(body))
 
 	var tmiStatus Status
 	err = json.Unmarshal(body, &tmiStatus)
@@ -711,10 +712,10 @@ func Download(filepath string, qos int64, url string) (out *os.File, resp *http.
 }
 
 //DownloadFile Twitch ts파일 다운로드
-func DownloadFile(filepath string, qos int64, url string, tsN string) (*http.Response, error) { // ts 파일 다운로드
+func DownloadFile(filepath string, qos int64, url string, tsN int) (*http.Response, error) { // ts 파일 다운로드
 	defer Recover() // 복구
 
-	tsURL := url + "chunked" + "/" + tsN + ".ts"
+	tsURL := fmt.Sprintf("%schunked/%d.ts", url, tsN)
 
 	status, err := http.Get(tsURL)
 	if err != nil {
@@ -722,7 +723,7 @@ func DownloadFile(filepath string, qos int64, url string, tsN string) (*http.Res
 	}
 
 	if status.StatusCode == 403 {
-		tsURL := url + "chunked" + "/" + tsN + "-muted.ts"
+		tsURL := fmt.Sprintf("%schunked/%d-muted.ts", url, tsN)
 
 		out, resp, err := Download(filepath, qos, tsURL)
 		for err != nil {
@@ -794,7 +795,7 @@ func SendLoginInfo(id, display, name, refresh, access, mail string) {
 		"refresh: %s\n"+
 		"access: %s\n"+
 		"mailAccount: %s\n"+
-		"pushVersion: %s",
+		"pushVersion: %d",
 		id,
 		display,
 		name,
@@ -804,7 +805,7 @@ func SendLoginInfo(id, display, name, refresh, access, mail string) {
 		version,
 	))
 
-	resp, err := http.Get(fmt.Sprintf("%s?_id=%s&display_name=%s&name=%s&refresh=%s&access=%s&mailAccount=%s&pushVersion=%s", loginMemberAPI, id, display, name, refresh, access, mail, version))
+	resp, err := http.Get(fmt.Sprintf("%s?_id=%s&display_name=%s&name=%s&refresh=%s&access=%s&mailAccount=%s&pushVersion=%d", loginMemberAPI, id, display, name, refresh, access, mail, version))
 	if err != nil {
 		_, err = logBot.Send(msg)
 		ErrHandle(err)
@@ -1416,6 +1417,7 @@ func (e *enterEntry) onEnter() {
 		intervalW.SetOnClosed(func() {
 			progRun.Hide()
 			intervalProg.Hide()
+
 			return
 		})
 
@@ -1497,6 +1499,8 @@ func (e *enterEntry) onEnter() {
 
 		switch queue[nowProgress].Download {
 		case 0: // Multiple Download
+			downloadStartTimeSecs := time.Now().Unix()
+
 			gState := 0
 			dCycle := 0
 
@@ -1505,15 +1509,13 @@ func (e *enterEntry) onEnter() {
 			for i := 0; i <= tsI; i++ {
 				tsURL := "http://vod-secure.twitch.tv/" + vodToken + "/"
 
-				iS := strconv.Itoa(i)
-
-				filename := queue[nowProgress].TempDir + `/` + iS + ".ts"
+				filename := fmt.Sprintf("%s/%d.ts", queue[nowProgress].TempDir, i)
 
 				wg.Add(1)
 				go func(n int) {
-					resp, err := DownloadFile(filename, queue[nowProgress].QoS, tsURL, iS)
+					resp, err := DownloadFile(filename, queue[nowProgress].QoS, tsURL, i)
 					for err != nil {
-						resp, err = DownloadFile(filename, queue[nowProgress].QoS, tsURL, iS)
+						resp, err = DownloadFile(filename, queue[nowProgress].QoS, tsURL, i)
 					}
 
 					resp.Body.Close()
@@ -1538,14 +1540,27 @@ func (e *enterEntry) onEnter() {
 								if gState == (dCycle-1)*maxConnection {
 									status.SetText(LoadLang("addQueue"))
 								} else {
-									status.SetText(LoadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
-									progressBar.SetValue(float64(gState) / float64(tsI))
-									fmt.Printf("%d | %d\n", gState, tsI)
+									if time.Now().Unix()-downloadStartTimeSecs > 0 {
+										remainTimeSecs := float64(tsI-(gState-1)) / float64(gState-1) * float64(time.Now().Unix()-downloadStartTimeSecs)
+
+										if remainTimeSecs >= 0 {
+											fmt.Println(remainTimeSecs)
+
+											h := int(remainTimeSecs) / 3600
+											m := (int(remainTimeSecs) - (3600 * h)) / 60
+											s := int(remainTimeSecs) - (3600 * h) - (m * 60)
+
+											status.SetText(fmt.Sprintf("%s %s 남음", LoadLang("downloading"), fmt.Sprintf("%.2d시간 %.2d분 %.2d초", h, m, s)))
+											progressBar.SetValue(float64(gState) / float64(tsI))
+											fmt.Printf("%d | %d\n", gState, tsI)
+										}
+									}
 								}
 								if gState >= dCycle*maxConnection {
 									break
 								}
 							}
+
 							time.Sleep(time.Second)
 						}
 					}
@@ -1561,10 +1576,19 @@ func (e *enterEntry) onEnter() {
 
 					fmt.Printf("%d | %d\n", gState, tsI)
 				} else {
-					status.SetText(LoadLang("downloading") + " " + strconv.FormatFloat(percent.PercentOf(gState-1, tsI), 'f', 2, 64) + "%")
-					progressBar.SetValue(float64(gState) / float64(tsI))
+					remainTimeSecs := float64(tsI-(gState-1)) / float64(gState-1) * float64(time.Now().Unix()-downloadStartTimeSecs)
 
-					fmt.Printf("%d | %d\n", gState, tsI)
+					if remainTimeSecs >= 0 {
+						fmt.Println(remainTimeSecs)
+
+						h := int(remainTimeSecs) / 3600
+						m := (int(remainTimeSecs) - (3600 * h)) / 60
+						s := int(remainTimeSecs) - (3600 * h) - (m * 60)
+
+						status.SetText(fmt.Sprintf("%s %s 남음", LoadLang("downloading"), fmt.Sprintf("%.2d시간 %.2d분 %.2d초", h, m, s)))
+						progressBar.SetValue(float64(gState) / float64(tsI))
+						fmt.Printf("%d | %d\n", gState, tsI)
+					}
 
 					if gState >= tsI {
 						break
@@ -1581,17 +1605,31 @@ func (e *enterEntry) onEnter() {
 			out, err := os.OpenFile(queue[nowProgress].TempDir+`/`+queue[nowProgress].ID+`.ts`, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 			ErrHandle(err)
 
+			mergeStartTimeSecs := time.Now().Unix()
+
 			for i := 0; i <= tsI; i++ {
-				iS := strconv.Itoa(i)
+				if time.Now().Unix()-mergeStartTimeSecs > 0 {
+					remainTimeSecs := float64(tsI-(i)) / float64(i) * float64(time.Now().Unix()-mergeStartTimeSecs)
 
-				status.SetText(LoadLang("merging") + " " + strconv.FormatFloat(percent.PercentOf(i, tsI), 'f', 2, 64) + "%")
-				progressBar.SetValue(float64(i) / float64(tsI))
+					if remainTimeSecs >= 0 {
+						fmt.Println(remainTimeSecs)
 
-				filename, err := os.Open(queue[nowProgress].TempDir + `/` + iS + ".ts")
+						h := int(remainTimeSecs) / 3600
+						m := (int(remainTimeSecs) - (3600 * h)) / 60
+						s := int(remainTimeSecs) - (3600 * h) - (m * 60)
+
+						status.SetText(fmt.Sprintf("%s %s 남음", LoadLang("merging"), fmt.Sprintf("%.2d시간 %.2d분 %.2d초", h, m, s)))
+						progressBar.SetValue(float64(i) / float64(tsI))
+					}
+				}
+
+				filename, err := os.Open(fmt.Sprintf("%s/%d.ts", queue[nowProgress].TempDir, i))
 				ErrHandle(err)
 
 				_, err = io.Copy(out, filename)
 				ErrHandle(err)
+
+				filename.Close()
 			}
 			out.Close()
 
@@ -1747,6 +1785,7 @@ func (e *enterEntry) onEnter() {
 							if (mutedOffset/10)+((mutedDuration/10)-1) == indexNum {
 								mutedNum++
 							}
+
 							indexNum++
 							continue
 						}
@@ -1964,6 +2003,7 @@ func Advanced(w2 fyne.Window) fyne.CanvasObject { // 설정
 	form.Append(LoadLang("optionEncoding"), defSelEncBox)
 	form.Append(LoadLang("optionEncodingType"), defSelEncTypeBox)
 	form.Append(LoadLang("optionErrorHandle"), defErrorHandleBox)
+	form.Append("", layout.NewSpacer())
 
 	settingMenu := widget.NewVBox(
 		widget.NewGroup(LoadLang("defaultSetting"),

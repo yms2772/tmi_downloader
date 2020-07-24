@@ -12,20 +12,19 @@ import (
 	"path/filepath"
 	"time"
 
-	"fyne.io/fyne/app"
-
-	"github.com/gen2brain/beeep"
-
 	"fyne.io/fyne"
+	"fyne.io/fyne/app"
 	"fyne.io/fyne/canvas"
 	"fyne.io/fyne/dialog"
 	"fyne.io/fyne/driver/desktop"
 	"fyne.io/fyne/widget"
 
+	"github.com/gen2brain/beeep"
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/gofrs/uuid"
 	"github.com/nicklaw5/helix"
 	"github.com/zserge/lorca"
+
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/twitch"
 )
@@ -84,13 +83,21 @@ func main() { // 메인
 
 	ioutil.WriteFile(debugFileName, []byte(fmt.Sprintf(fmt.Sprintf("===== %s 시작\n실행 UUID: %s\n\n", time.Now().Format("2006-01-02 15:04:05"), programUUID))), 0644)
 
+	debugLog, err = os.OpenFile(debugFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	ErrHandle(err)
+	defer debugLog.Close()
+
 	defer Recover() // 복구
 
 	if resetFlag {
+		WriteDebug("알림", "Reset Flag")
+
 		resetFiles, err := filepath.Glob(dirBin + "/*")
 		ErrHandle(err)
 
 		for _, resetFile := range resetFiles {
+			WriteDebug("알림", "삭제: "+resetFile)
+
 			err := os.Remove(resetFile)
 			ErrHandle(err)
 		}
@@ -99,14 +106,14 @@ func main() { // 메인
 	}
 
 	if loginFlag == "logout" {
+		WriteDebug("알림", "Login Flag: logout")
+
 		a.Preferences().SetString("twitchRefreshToken", "error")
 
 		RunAgain()
 	}
 
-	debugLog, err = os.OpenFile(debugFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	ErrHandle(err)
-	defer debugLog.Close()
+	WriteDebug("알림", "Splash 이미지 로드 중...")
 
 	logoImage := &canvas.Image{
 		Resource: logo,
@@ -117,17 +124,26 @@ func main() { // 메인
 
 	lang = a.Preferences().StringWithFallback("language", "Korean")
 
+	WriteDebug("알림", "언어: "+lang)
+
 	appInfo := &appInfo{
 		name: "TMI Downloader",
 	}
 
 	appInfo.icon = logo
 
+	WriteDebug("알림", "테마 설정 중...")
+
 	a.SetIcon(appInfo.icon)
 	a.Settings().SetTheme(NewCustomTheme())
 
 	dirTemp = a.Preferences().StringWithFallback("dir_temp", VarOS("dirTemp"))
 	dirThumb = dirTemp + "/thumb"
+
+	WriteDebug("알림", "캐시 폴더: "+dirTemp)
+	WriteDebug("알림", "썸네일 폴더: "+dirThumb)
+
+	WriteDebug("알림", "Splash 드라이버 로드 중...")
 
 	drv := a.Driver().(desktop.Driver)
 
@@ -138,6 +154,8 @@ func main() { // 메인
 	splWindow.CenterOnScreen()
 
 	if loginFlag == "offline" {
+		WriteDebug("알림", "로그인: 오프라인 모드")
+
 		title = "TMI Downloader Offline Mode"
 	}
 
@@ -156,6 +174,8 @@ func main() { // 메인
 		_, noFFmpeg := os.Stat(dirBin + "/" + ffmpegBinary)
 
 		if os.IsNotExist(noFFmpeg) {
+			WriteDebug("알림", "필수 파일 다운로드: ffmpeg.tar.gz")
+
 			splWindow.SetContent(SplBox(LoadLang("downloadNecessary"), logoImage))
 
 			if _, err := os.Stat(dirBin + "/" + ffmpegBinary); os.IsNotExist(err) {
@@ -166,6 +186,8 @@ func main() { // 메인
 				r, err := os.Open(dirBin + "/ffmpeg.tar.gz")
 				ErrHandle(err)
 				defer r.Close()
+
+				WriteDebug("알림", "압축 해제: ffmpeg.tar.gz")
 
 				err = Untar(dirBin, r)
 				ErrHandle(err)
@@ -402,6 +424,17 @@ func main() { // 메인
 			}()
 		})
 
+		cacheItem := fyne.NewMenuItem("캐시 제거", func() {
+			removeCache := dialog.NewProgressInfinite(title, fmt.Sprintf("캐시 제거 중...\n프로그램이 재시작 됩니다."), w)
+			removeCache.Show()
+
+			ClearDir(dirTemp)
+
+			time.Sleep(time.Second)
+
+			RunAgain()
+		})
+
 		logoutItem := fyne.NewMenuItem(LoadLang("logout"), func() {
 			a.Preferences().SetString("twitchRefreshToken", "error")
 
@@ -412,7 +445,7 @@ func main() { // 메인
 
 		mainMenu := fyne.NewMainMenu(
 			fyne.NewMenu(LoadLang("menuInfo"), noticeItem, licenseItem),
-			fyne.NewMenu(LoadLang("menuMore"), installReqItem, settingItem),
+			fyne.NewMenu(LoadLang("menuMore"), installReqItem, settingItem, cacheItem),
 			fyne.NewMenu(twitchDisplayName+LoadLang("hello"), logoutItem),
 		)
 
@@ -447,7 +480,7 @@ func main() { // 메인
 		})
 
 		if needUpdate {
-			if a.Preferences().String("ignore_version") != newVersion {
+			if a.Preferences().Int("ignore_version") != newVersion {
 				u, _ := url.Parse("https://notice.tmi.tips/TDownloader/")
 
 				if needForced {
@@ -473,7 +506,7 @@ func main() { // 메인
 
 					dialog.ShowCustomConfirm(title, "OK", "이번 업데이트 무시하기", updateContent, func(c bool) {
 						if !c {
-							a.Preferences().SetString("ignore_version", newVersion)
+							a.Preferences().SetInt("ignore_version", newVersion)
 						}
 					}, w)
 				}

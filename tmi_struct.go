@@ -5,9 +5,8 @@ import (
 	"os/exec"
 	"sync"
 
-	"fyne.io/fyne/widget"
-
 	"fyne.io/fyne"
+	"fyne.io/fyne/widget"
 )
 
 //TMI TMI Download API 구조체
@@ -19,9 +18,9 @@ type TMI struct {
 
 //Status 업데이트 정보 구조체
 type Status struct {
-	Code    int    `json:"code"`
-	Version string `json:"version"`
-	Force   bool   `json:"force"`
+	Code    int  `json:"code"`
+	Version int  `json:"version"`
+	Force   bool `json:"force"`
 }
 
 //TwitchVOD Twitch v5 Videos Reference - Get Video 구조체
