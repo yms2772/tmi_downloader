@@ -181,7 +181,7 @@ func main() { // 메인
 			needUpdate = false
 		}
 
-		bot, _ = tgbot.NewBotAPI("1267111133:AAEyfJ66CNHH956wT-efPrXnFiNAVVHmE4g")
+		bot, _ = tgbot.NewBotAPI("")
 		bot.Debug = false
 
 		gob.Register(&oauth2.Token{})
